@@ -1,0 +1,1252 @@
+---
+title: "Fn_Exposure_DE_Analysis"
+author: "Cody"
+date: "15/05/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Set up 
+
+```{r}
+ROOT_DIR <- "/Users/Cody/Documents/holt_lab/INVASION_EXP"
+SCRIPT_DIR <- setwd(ROOT_DIR)
+knitr::opts_knit$set(root.dir = ROOT_DIR)
+
+if(! "knitr" %in% installed.packages()){
+  BiocManager::install("knitr")
+}
+library("knitr")
+
+if(! "enrichR" %in% installed.packages()){
+  BiocManager::install("enrichR")
+}
+library("enrichR")
+
+if(! "dplyr" %in% installed.packages()){
+  BiocManager::install("dplyr")
+}
+library("dplyr")
+
+if(! "ggpubr" %in% installed.packages()){
+  BiocManager::install("ggpubr")
+}
+library("ggpubr")
+
+if(! "ggplot2" %in% installed.packages()){
+  BiocManager::install("ggplot2")
+}
+library("ggplot2")
+
+if(! "tidyverse" %in% installed.packages()){
+  BiocManager::install("tidyverse")
+}
+library("tidyverse")
+
+if(! "ggrepel" %in% installed.packages()){
+  BiocManager::install("ggrepel")
+}
+library("ggrepel")
+
+if(! "UpSetR" %in% installed.packages()){
+  BiocManager::install("UpSetR")
+}
+library("UpSetR")
+
+if(! "egg" %in% installed.packages()){
+  BiocManager::install("egg")
+}
+library("egg")
+
+if(! "gdata" %in% installed.packages()){
+  BiocManager::install("gdata")
+}
+library("gdata")
+
+knitr::opts_chunk$set(
+	tidy.opts=list(width.cutoff=60),
+	tidy=TRUE,
+	fig.height = 10,
+	fig.width = 15,
+	dev = "pdf",
+	echo = TRUE,
+	out.width = "100%"
+)
+```
+
+\newpage 
+
+#################################################################################################################################################################
+
+# Load data 
+
+```{r}
+
+# read in data for 2 human cell lines with each of 3 fuso strains
+
+## HCAE
+HCAE_23726 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCAE_23726.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+HCAE_7.1 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCAE_7.1.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+HCAE_7.3 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCAE_7.3.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+## HCE
+HCE_23726 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCE_23726.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+HCE_7.1 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCE_7.1.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+HCE_7.3 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCE_7.3.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+
+```
+
+
+# Isolate significantly differentially expressed protein coding genes
+
+```{r}
+## HCAE - isolate significantly DE protein coding genes from each condition
+### filter to protein coding genes only
+HCAE_23726_pc <- subset(HCAE_23726, (biotype_category == "protein_coding"))
+HCAE_7.1_pc <- subset(HCAE_7.1, (biotype_category == "protein_coding"))
+HCAE_7.3_pc <- subset(HCAE_7.3, (biotype_category == "protein_coding"))
+
+### define significance threshold and filter for significantly DE genes
+pa = 0.05
+
+HCAE_23726_pc_sig <- subset(HCAE_23726_pc, padj <= pa)
+HCAE_7.1_pc_sig <- subset(HCAE_7.1_pc, padj <= pa)
+HCAE_7.3_pc_sig <- subset(HCAE_7.3_pc, padj <= pa)
+
+## HCE - isolate significantly DE protein coding genes from each condition
+### filter to protein coding genes only
+HCE_23726_pc <- subset(HCE_23726, (biotype_category == "protein_coding"))
+HCE_7.1_pc <- subset(HCE_7.1, (biotype_category == "protein_coding"))
+HCE_7.3_pc <- subset(HCE_7.3, (biotype_category == "protein_coding"))
+
+### define significance threshold and filter for significantly DE genes
+pa = 0.05
+
+HCE_23726_pc_sig <- subset(HCE_23726_pc, padj <= pa)
+HCE_7.1_pc_sig <- subset(HCE_7.1_pc, padj <= pa)
+HCE_7.3_pc_sig <- subset(HCE_7.3_pc, padj <= pa)
+
+```
+
+
+# Split into upregulated and downregulated sets
+
+```{r}
+## HCAE
+HCAE_23726_sig_up <- subset(HCAE_23726_pc_sig, log2FoldChange > 0)
+HCAE_23726_sig_dn <- subset(HCAE_23726_pc_sig, log2FoldChange < 0)
+HCAE_7.1_sig_up <- subset(HCAE_7.1_pc_sig, log2FoldChange > 0)
+HCAE_7.1_sig_dn <- subset(HCAE_7.1_pc_sig, log2FoldChange < 0)
+HCAE_7.3_sig_up <- subset(HCAE_7.3_pc_sig, log2FoldChange > 0)
+HCAE_7.3_sig_dn <- subset(HCAE_7.3_pc_sig, log2FoldChange < 0)
+
+## HCE
+HCE_23726_sig_up <- subset(HCE_23726_pc_sig, log2FoldChange > 0)
+HCE_23726_sig_dn <- subset(HCE_23726_pc_sig, log2FoldChange < 0)
+HCE_7.1_sig_up <- subset(HCE_7.1_pc_sig, log2FoldChange > 0)
+HCE_7.1_sig_dn <- subset(HCE_7.1_pc_sig, log2FoldChange < 0)
+HCE_7.3_sig_up <- subset(HCE_7.3_pc_sig, log2FoldChange > 0)
+HCE_7.3_sig_dn <- subset(HCE_7.3_pc_sig, log2FoldChange < 0)
+
+
+```
+
+# Figure 1A - Comparison of differential expression of HCE and HCAE protein-coding genes in response to various Fn strains (Upregulated genes) 
+
+```{r}
+## create an input file for upsetR using the external gene name from significance filtered DE dataframes for each upregulated condition
+listInput <- list("HCAE.Fn23726" =  (as.vector(HCAE_23726_sig_up[['external_gene_name']])), 
+                  "HCAE.Fn71" =  (as.vector(HCAE_7.1_sig_up[['external_gene_name']])), 
+                  "HCAE.Fn73" =  (as.vector(HCAE_7.3_sig_up[['external_gene_name']])), 
+                  "HCE.Fn23726" =  (as.vector(HCE_23726_sig_up[['external_gene_name']])), 
+                  "HCE.Fn71" =  (as.vector(HCE_7.1_sig_up[['external_gene_name']])), 
+                  "HCE.Fn73" =  (as.vector(HCE_7.3_sig_up[['external_gene_name']])))
+
+fromList <- function (input) {
+  elements <- unique(unlist(input))
+  data <- unlist(lapply(input, function(x) {
+      x <- as.vector(match(elements, x))
+      }))
+  data[is.na(data)] <- as.integer(0)
+  data[data != 0] <- as.integer(1)
+  data <- data.frame(matrix(data, ncol = length(input), byrow = F))
+  data <- data[which(rowSums(data) != 0), ]
+  names(data) <- names(input)
+  row.names(data) <- elements
+  return(data)
+  }
+
+upsetListInput <- fromList(listInput)
+
+UR_upsetListInput <- upsetListInput
+
+## plotting 
+### all contrasts  
+upset(upsetListInput, nsets = 6, nintersects = 55, sets.bar.color	
+ = "#D55E00", mainbar.y.label = "Upregulated Gene Set Intersections", sets.x.label = "Upregulated genes per contrast", text.scale = c(1.5, 1.3, 1, .75, 1.25, 1.25))
+
+
+## select contrasts of interest
+upregulated_UpsetPlot_human <- upset(upsetListInput, nsets = 6, nintersects = 12, mainbar.y.label = "Upregulated Gene Set Intersections", sets.x.label = "Upregulated genes per contrast", text.scale = c(1.5, 1.3, 1, .75, 1.25, 1.25),intersections = list(list('HCAE.Fn71'), list('HCAE.Fn73'), list('HCAE.Fn23726'), list('HCE.Fn71'), list('HCE.Fn73'), list('HCE.Fn23726'), list('HCAE.Fn23726', 'HCE.Fn23726'), list('HCAE.Fn71', 'HCE.Fn71'), list('HCAE.Fn73', 'HCE.Fn73'), list('HCAE.Fn23726', 'HCAE.Fn71', 'HCAE.Fn73'), list('HCE.Fn23726', 'HCE.Fn71', 'HCE.Fn73'), list('HCAE.Fn23726', 'HCAE.Fn71', 'HCAE.Fn73', 'HCE.Fn23726', 'HCE.Fn71', 'HCE.Fn73')), order.by = c("freq", "degree"), decreasing = c(F, T), keep.order = T)
+
+upregulated_UpsetPlot_human
+
+png('upregulated_UpsetPlot_human.png', width=8, height=6, units = "in", res=500)
+upregulated_UpsetPlot_human
+dev.off()
+
+```
+
+# Figure 1B - Comparison of differential expression of HCE and HCAE protein-coding genes in response to various Fn strains (Downregulated genes) 
+
+```{r}
+## create an input file for upsetR using the external gene name from significance filtered DE dataframes for each downregulated condition
+listInput <- list("HCAE.Fn23726" =  (as.vector(HCAE_23726_sig_dn[['external_gene_name']])), 
+                  "HCAE.Fn71" =  (as.vector(HCAE_7.1_sig_dn[['external_gene_name']])), 
+                  "HCAE.Fn73" =  (as.vector(HCAE_7.3_sig_dn[['external_gene_name']])), 
+                  "HCE.Fn23726" =  (as.vector(HCE_23726_sig_dn[['external_gene_name']])), 
+                  "HCE.Fn71" =  (as.vector(HCE_7.1_sig_dn[['external_gene_name']])), 
+                  "HCE.Fn73" =  (as.vector(HCE_7.3_sig_dn[['external_gene_name']])))
+
+fromList <- function (input) {
+  elements <- unique(unlist(input))
+  data <- unlist(lapply(input, function(x) {
+      x <- as.vector(match(elements, x))
+      }))
+  data[is.na(data)] <- as.integer(0)
+  data[data != 0] <- as.integer(1)
+  data <- data.frame(matrix(data, ncol = length(input), byrow = F))
+  data <- data[which(rowSums(data) != 0), ]
+  names(data) <- names(input)
+  row.names(data) <- elements
+  return(data)
+  }
+
+upsetListInput <- fromList(listInput)
+
+DR_upsetListInput <- upsetListInput
+
+## plotting 
+### all contrasts  
+upset(upsetListInput, nsets = 6, nintersects = 55, sets.bar.color	
+ = "#56B4E9", mainbar.y.label = "Downregulated Gene Set Intersections", sets.x.label = "Downregulated genes per contrast", text.scale = c(1.5, 1.3, 1, .75, 1.25, 1.25))
+
+## select contrasts of interest
+downregulated_UpsetPlot_human <- upset(upsetListInput, nsets = 6, nintersects = 12, mainbar.y.label = "Downregulated Gene Set Intersections", sets.x.label = "Downregulated genes per contrast", text.scale = c(1.5, 1.3, 1, .75, 1.25, 1.25),intersections = list(list('HCAE.Fn71'), list('HCAE.Fn73'), list('HCAE.Fn23726'), list('HCE.Fn71'), list('HCE.Fn73'), list('HCE.Fn23726'), list('HCAE.Fn23726', 'HCE.Fn23726'), list('HCAE.Fn71', 'HCE.Fn71'), list('HCAE.Fn73', 'HCE.Fn73'), list('HCAE.Fn23726', 'HCAE.Fn71', 'HCAE.Fn73'), list('HCE.Fn23726', 'HCE.Fn71', 'HCE.Fn73'), list('HCAE.Fn23726', 'HCAE.Fn71', 'HCAE.Fn73', 'HCE.Fn23726', 'HCE.Fn71', 'HCE.Fn73')), order.by = c("freq", "degree"), decreasing = c(F, T), keep.order = T)
+
+downregulated_UpsetPlot_human
+
+png('downregulated_UpsetPlot_human.png', width=8, height=6, units = "in", res=500)
+downregulated_UpsetPlot_human
+dev.off()
+
+
+```
+
+# Supplementary File 1 
+
+```{r}
+
+## Upregulated
+## All conditions
+All_condition_upregulated_DE_genes <- subset(UR_upsetListInput, HCAE.Fn23726 == 1 & HCAE.Fn71 == 1 & HCAE.Fn73 == 1 & HCE.Fn23726 == 1 & HCE.Fn71 == 1 & HCE.Fn73 == 1)
+All_condition_upregulated_DE_genes <- row.names(All_condition_upregulated_DE_genes)
+All_condition_upregulated_DE_genes <-gsub("_.*","", All_condition_upregulated_DE_genes)
+
+# HCE conditions
+HCE_conditions_upregulated_DE_genes <- subset(UR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 0 & HCAE.Fn73 == 0 & HCE.Fn23726 == 1 & HCE.Fn71 == 1 & HCE.Fn73 == 1)
+HCE_conditions_upregulated_DE_genes <- row.names(HCE_conditions_upregulated_DE_genes)
+HCE_conditions_upregulated_DE_genes <-gsub("_.*","", HCE_conditions_upregulated_DE_genes)
+
+# HCAE conditions
+HCAE_conditions_upregulated_DE_genes <- subset(UR_upsetListInput, HCAE.Fn23726 == 1 & HCAE.Fn71 == 1 & HCAE.Fn73 == 1 & HCE.Fn23726 == 0 & HCE.Fn71 == 0 & HCE.Fn73 == 0)
+HCAE_conditions_upregulated_DE_genes <- row.names(HCAE_conditions_upregulated_DE_genes)
+HCAE_conditions_upregulated_DE_genes <-gsub("_.*","", HCAE_conditions_upregulated_DE_genes)
+
+# Fn23726 conditions
+Fn23726_conditions_upregulated_DE_genes <- subset(UR_upsetListInput, HCAE.Fn23726 == 1 & HCAE.Fn71 == 0 & HCAE.Fn73 == 0 & HCE.Fn23726 == 1 & HCE.Fn71 == 0 & HCE.Fn73 == 0)
+Fn23726_conditions_upregulated_DE_genes <- row.names(Fn23726_conditions_upregulated_DE_genes)
+Fn23726_conditions_upregulated_DE_genes <-gsub("_.*","", Fn23726_conditions_upregulated_DE_genes)
+
+# Fn71 conditions
+Fn71_conditions_upregulated_DE_genes <- subset(UR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 1 & HCAE.Fn73 == 0 & HCE.Fn23726 == 0 & HCE.Fn71 == 1 & HCE.Fn73 == 0)
+Fn71_conditions_upregulated_DE_genes <- row.names(Fn71_conditions_upregulated_DE_genes)
+Fn71_conditions_upregulated_DE_genes <-gsub("_.*","", Fn71_conditions_upregulated_DE_genes)
+
+# Fn73 conditions
+Fn73_conditions_upregulated_DE_genes <- subset(UR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 0 & HCAE.Fn73 == 1 & HCE.Fn23726 == 0 & HCE.Fn71 == 0 & HCE.Fn73 == 1)
+Fn73_conditions_upregulated_DE_genes <- row.names(Fn73_conditions_upregulated_DE_genes)
+Fn73_conditions_upregulated_DE_genes <-gsub("_.*","", Fn73_conditions_upregulated_DE_genes)
+
+# HCE Fn23726 condition
+HCE_Fn23726_only_upregulated_DE_genes <- subset(UR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 0 & HCAE.Fn73 == 0 & HCE.Fn23726 == 1 & HCE.Fn71 == 0 & HCE.Fn73 == 0)
+HCE_Fn23726_only_upregulated_DE_genes <- row.names(HCE_Fn23726_only_upregulated_DE_genes)
+HCE_Fn23726_only_upregulated_DE_genes <-gsub("_.*","", HCE_Fn23726_only_upregulated_DE_genes)
+
+# HCE Fn71 condition
+HCE_Fn71_only_upregulated_DE_genes <- subset(UR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 0 & HCAE.Fn73 == 0 & HCE.Fn23726 == 0 & HCE.Fn71 == 1 & HCE.Fn73 == 0)
+HCE_Fn71_only_upregulated_DE_genes <- row.names(HCE_Fn71_only_upregulated_DE_genes)
+HCE_Fn71_only_upregulated_DE_genes <-gsub("_.*","", HCE_Fn71_only_upregulated_DE_genes)
+
+# HCE Fn73 condition
+HCE_Fn73_only_upregulated_DE_genes <- subset(UR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 0 & HCAE.Fn73 == 0 & HCE.Fn23726 == 0 & HCE.Fn71 == 0 & HCE.Fn73 == 1)
+HCE_Fn73_only_upregulated_DE_genes <- row.names(HCE_Fn73_only_upregulated_DE_genes)
+HCE_Fn73_only_upregulated_DE_genes <-gsub("_.*","", HCE_Fn73_only_upregulated_DE_genes)
+
+# HCAE Fn23726 condition
+HCAE_Fn23726_only_upregulated_DE_genes <- subset(UR_upsetListInput, HCAE.Fn23726 == 1 & HCAE.Fn71 == 0 & HCAE.Fn73 == 0 & HCE.Fn23726 == 0 & HCE.Fn71 == 0 & HCE.Fn73 == 0)
+HCAE_Fn23726_only_upregulated_DE_genes <- row.names(HCAE_Fn23726_only_upregulated_DE_genes)
+HCAE_Fn23726_only_upregulated_DE_genes <-gsub("_.*","", HCAE_Fn23726_only_upregulated_DE_genes)
+
+# HCAE Fn71 condition
+HCAE_Fn71_only_upregulated_DE_genes <- subset(UR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 1 & HCAE.Fn73 == 0 & HCE.Fn23726 == 0 & HCE.Fn71 == 0 & HCE.Fn73 == 0)
+HCAE_Fn71_only_upregulated_DE_genes <- row.names(HCAE_Fn71_only_upregulated_DE_genes)
+HCAE_Fn71_only_upregulated_DE_genes <-gsub("_.*","", HCAE_Fn71_only_upregulated_DE_genes)
+
+# HCAE Fn73 condition
+HCAE_Fn73_only_upregulated_DE_genes <- subset(UR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 0 & HCAE.Fn73 == 1 & HCE.Fn23726 == 0 & HCE.Fn71 == 0 & HCE.Fn73 == 0)
+HCAE_Fn73_only_upregulated_DE_genes <- row.names(HCAE_Fn73_only_upregulated_DE_genes)
+HCAE_Fn73_only_upregulated_DE_genes <-gsub("_.*","", HCAE_Fn73_only_upregulated_DE_genes)
+
+upregulated_contrast_gene_lists <- cbindX(as.data.frame(All_condition_upregulated_DE_genes), as.data.frame(HCE_conditions_upregulated_DE_genes), as.data.frame(HCAE_conditions_upregulated_DE_genes), as.data.frame(Fn23726_conditions_upregulated_DE_genes), as.data.frame(Fn71_conditions_upregulated_DE_genes), as.data.frame(Fn73_conditions_upregulated_DE_genes), as.data.frame(HCE_Fn23726_only_upregulated_DE_genes), as.data.frame(HCE_Fn71_only_upregulated_DE_genes), as.data.frame(HCE_Fn73_only_upregulated_DE_genes), as.data.frame(HCAE_Fn23726_only_upregulated_DE_genes), as.data.frame(HCAE_Fn71_only_upregulated_DE_genes), as.data.frame(HCAE_Fn73_only_upregulated_DE_genes))
+
+
+## downregulated
+## All conditions
+All_condition_downregulated_DE_genes <- subset(DR_upsetListInput, HCAE.Fn23726 == 1 & HCAE.Fn71 == 1 & HCAE.Fn73 == 1 & HCE.Fn23726 == 1 & HCE.Fn71 == 1 & HCE.Fn73 == 1)
+All_condition_downregulated_DE_genes <- row.names(All_condition_downregulated_DE_genes)
+All_condition_downregulated_DE_genes <-gsub("_.*","", All_condition_downregulated_DE_genes)
+
+# HCE conditions
+HCE_conditions_downregulated_DE_genes <- subset(DR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 0 & HCAE.Fn73 == 0 & HCE.Fn23726 == 1 & HCE.Fn71 == 1 & HCE.Fn73 == 1)
+HCE_conditions_downregulated_DE_genes <- row.names(HCE_conditions_downregulated_DE_genes)
+HCE_conditions_downregulated_DE_genes <-gsub("_.*","", HCE_conditions_downregulated_DE_genes)
+
+# HCAE conditions
+HCAE_conditions_downregulated_DE_genes <- subset(DR_upsetListInput, HCAE.Fn23726 == 1 & HCAE.Fn71 == 1 & HCAE.Fn73 == 1 & HCE.Fn23726 == 0 & HCE.Fn71 == 0 & HCE.Fn73 == 0)
+HCAE_conditions_downregulated_DE_genes <- row.names(HCAE_conditions_downregulated_DE_genes)
+HCAE_conditions_downregulated_DE_genes <-gsub("_.*","", HCAE_conditions_downregulated_DE_genes)
+
+# Fn23726 conditions
+Fn23726_conditions_downregulated_DE_genes <- subset(DR_upsetListInput, HCAE.Fn23726 == 1 & HCAE.Fn71 == 0 & HCAE.Fn73 == 0 & HCE.Fn23726 == 1 & HCE.Fn71 == 0 & HCE.Fn73 == 0)
+Fn23726_conditions_downregulated_DE_genes <- row.names(Fn23726_conditions_downregulated_DE_genes)
+Fn23726_conditions_downregulated_DE_genes <-gsub("_.*","", Fn23726_conditions_downregulated_DE_genes)
+
+# Fn71 conditions
+Fn71_conditions_downregulated_DE_genes <- subset(DR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 1 & HCAE.Fn73 == 0 & HCE.Fn23726 == 0 & HCE.Fn71 == 1 & HCE.Fn73 == 0)
+Fn71_conditions_downregulated_DE_genes <- row.names(Fn71_conditions_downregulated_DE_genes)
+Fn71_conditions_downregulated_DE_genes <-gsub("_.*","", Fn71_conditions_downregulated_DE_genes)
+
+# Fn73 conditions
+Fn73_conditions_downregulated_DE_genes <- subset(DR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 0 & HCAE.Fn73 == 1 & HCE.Fn23726 == 0 & HCE.Fn71 == 0 & HCE.Fn73 == 1)
+Fn73_conditions_downregulated_DE_genes <- row.names(Fn73_conditions_downregulated_DE_genes)
+Fn73_conditions_downregulated_DE_genes <-gsub("_.*","", Fn73_conditions_downregulated_DE_genes)
+
+# HCE Fn23726 condition
+HCE_Fn23726_only_downregulated_DE_genes <- subset(DR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 0 & HCAE.Fn73 == 0 & HCE.Fn23726 == 1 & HCE.Fn71 == 0 & HCE.Fn73 == 0)
+HCE_Fn23726_only_downregulated_DE_genes <- row.names(HCE_Fn23726_only_downregulated_DE_genes)
+HCE_Fn23726_only_downregulated_DE_genes <-gsub("_.*","", HCE_Fn23726_only_downregulated_DE_genes)
+
+# HCE Fn71 condition
+HCE_Fn71_only_downregulated_DE_genes <- subset(DR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 0 & HCAE.Fn73 == 0 & HCE.Fn23726 == 0 & HCE.Fn71 == 1 & HCE.Fn73 == 0)
+HCE_Fn71_only_downregulated_DE_genes <- row.names(HCE_Fn71_only_downregulated_DE_genes)
+HCE_Fn71_only_downregulated_DE_genes <-gsub("_.*","", HCE_Fn71_only_downregulated_DE_genes)
+
+# HCE Fn73 condition
+HCE_Fn73_only_downregulated_DE_genes <- subset(DR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 0 & HCAE.Fn73 == 0 & HCE.Fn23726 == 0 & HCE.Fn71 == 0 & HCE.Fn73 == 1)
+HCE_Fn73_only_downregulated_DE_genes <- row.names(HCE_Fn73_only_downregulated_DE_genes)
+HCE_Fn73_only_downregulated_DE_genes <-gsub("_.*","", HCE_Fn73_only_downregulated_DE_genes)
+
+# HCAE Fn23726 condition
+HCAE_Fn23726_only_downregulated_DE_genes <- subset(DR_upsetListInput, HCAE.Fn23726 == 1 & HCAE.Fn71 == 0 & HCAE.Fn73 == 0 & HCE.Fn23726 == 0 & HCE.Fn71 == 0 & HCE.Fn73 == 0)
+HCAE_Fn23726_only_downregulated_DE_genes <- row.names(HCAE_Fn23726_only_downregulated_DE_genes)
+HCAE_Fn23726_only_downregulated_DE_genes <-gsub("_.*","", HCAE_Fn23726_only_downregulated_DE_genes)
+
+# HCAE Fn71 condition
+HCAE_Fn71_only_downregulated_DE_genes <- subset(DR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 1 & HCAE.Fn73 == 0 & HCE.Fn23726 == 0 & HCE.Fn71 == 0 & HCE.Fn73 == 0)
+HCAE_Fn71_only_downregulated_DE_genes <- row.names(HCAE_Fn71_only_downregulated_DE_genes)
+HCAE_Fn71_only_downregulated_DE_genes <-gsub("_.*","", HCAE_Fn71_only_downregulated_DE_genes)
+
+# HCAE Fn73 condition
+HCAE_Fn73_only_downregulated_DE_genes <- subset(DR_upsetListInput, HCAE.Fn23726 == 0 & HCAE.Fn71 == 0 & HCAE.Fn73 == 1 & HCE.Fn23726 == 0 & HCE.Fn71 == 0 & HCE.Fn73 == 0)
+HCAE_Fn73_only_downregulated_DE_genes <- row.names(HCAE_Fn73_only_downregulated_DE_genes)
+HCAE_Fn73_only_downregulated_DE_genes <-gsub("_.*","", HCAE_Fn73_only_downregulated_DE_genes)
+
+downregulated_contrast_gene_lists <- cbindX(as.data.frame(All_condition_downregulated_DE_genes), as.data.frame(HCE_conditions_downregulated_DE_genes), as.data.frame(HCAE_conditions_downregulated_DE_genes), as.data.frame(Fn23726_conditions_downregulated_DE_genes), as.data.frame(Fn71_conditions_downregulated_DE_genes), as.data.frame(Fn73_conditions_downregulated_DE_genes), as.data.frame(HCE_Fn23726_only_downregulated_DE_genes), as.data.frame(HCE_Fn71_only_downregulated_DE_genes), as.data.frame(HCE_Fn73_only_downregulated_DE_genes), as.data.frame(HCAE_Fn23726_only_downregulated_DE_genes), as.data.frame(HCAE_Fn71_only_downregulated_DE_genes), as.data.frame(HCAE_Fn73_only_downregulated_DE_genes))
+
+all_contrast_gene_lists <- cbindX(upregulated_contrast_gene_lists, downregulated_contrast_gene_lists)
+
+write.csv(all_contrast_gene_lists, file = "SupplementaryFile1.csv", row.names=FALSE, na = "")
+
+
+```
+
+
+#################################################################################################################################################################
+
+
+# Re-load data 
+
+```{r}
+
+# read in data for 2 human cell lines with each of 3 fuso strains
+
+## HCAE
+HCAE_23726 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCAE_23726.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+HCAE_7.1 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCAE_7.1.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+HCAE_7.3 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCAE_7.3.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+## HCE
+HCE_23726 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCE_23726.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+HCE_7.1 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCE_7.1.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+HCE_7.3 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCE_7.3.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+
+```
+
+# Figure 2A - Differential expression gene sets of interest scatterplot
+
+```{r}
+## HCAE - isolate significantly DE protein coding genes from all conditions and then calculate the mean and SD between strains
+### filter to protein coding genes only
+HCAE_23726_pc <- subset(HCAE_23726, (biotype_category == "protein_coding"))
+HCAE_7.1_pc <- subset(HCAE_7.1, (biotype_category == "protein_coding"))
+HCAE_7.3_pc <- subset(HCAE_7.3, (biotype_category == "protein_coding"))
+
+### define significance threshold and filter for significantly DE genes
+pa = 0.05
+
+HCAE_23726_pc_sig <- subset(HCAE_23726_pc, padj <= pa)
+HCAE_7.1_pc_sig <- subset(HCAE_7.1_pc, padj <= pa)
+HCAE_7.3_pc_sig <- subset(HCAE_7.3_pc, padj <= pa)
+
+### rename columns in preparation for merging, then select columns of interest
+colnames(HCAE_23726_pc_sig)[colnames(HCAE_23726_pc_sig) == "log2FoldChange"] <- "log2FoldChange_HCAE_23726"
+colnames(HCAE_7.1_pc_sig)[colnames(HCAE_7.1_pc_sig) == "log2FoldChange"] <- "log2FoldChange_HCAE_7.1"
+colnames(HCAE_7.3_pc_sig)[colnames(HCAE_7.3_pc_sig) == "log2FoldChange"] <- "log2FoldChange_HCAE_7.3"
+
+colnames(HCAE_23726_pc_sig)[colnames(HCAE_23726_pc_sig) == "padj"] <- "padj_HCAE_23726"
+colnames(HCAE_7.1_pc_sig)[colnames(HCAE_7.1_pc_sig) == "padj"] <- "padj_HCAE_7.1"
+colnames(HCAE_7.3_pc_sig)[colnames(HCAE_7.3_pc_sig) == "padj"] <- "padj_HCAE_7.3"
+
+HCAE_23726_pc_sig <- HCAE_23726_pc_sig %>% select("external_gene_name", contains("log2FoldChange"), contains("padj"))
+HCAE_7.1_pc_sig <- HCAE_7.1_pc_sig %>% select("external_gene_name", contains("log2FoldChange"), contains("padj"))
+HCAE_7.3_pc_sig <- HCAE_7.3_pc_sig %>% select("external_gene_name", contains("log2FoldChange"), contains("padj"))
+
+### merge using the external gene name 
+HCAE_allstrain_pc <- merge(HCAE_23726_pc_sig, HCAE_7.1_pc_sig, all = TRUE)
+HCAE_allstrain_pc <- merge(HCAE_allstrain_pc, HCAE_7.3_pc_sig, all = TRUE)
+
+### replace all NA/non-significant values with 0
+HCAE_allstrain_pc[is.na(HCAE_allstrain_pc)] <- 0
+
+### calculate mean log2FC
+HCAE_allstrain_pc$HCAE_log2FC_mean <- ((HCAE_allstrain_pc$log2FoldChange_HCAE_23726 + HCAE_allstrain_pc$log2FoldChange_HCAE_7.1 + HCAE_allstrain_pc$log2FoldChange_HCAE_7.3)/3)
+
+### calculate SD 
+HCAE_allstrain_pc$HCAE_log2FC_sd <- apply(HCAE_allstrain_pc[, c("log2FoldChange_HCAE_23726","log2FoldChange_HCAE_7.1", "log2FoldChange_HCAE_7.3")], 1, sd)
+
+## HCE - isolate significantly DE protein coding genes from all conditions and then calculate the mean and SD between strains
+### filter to protein coding genes only
+HCE_23726_pc <- subset(HCE_23726, (biotype_category == "protein_coding"))
+HCE_7.1_pc <- subset(HCE_7.1, (biotype_category == "protein_coding"))
+HCE_7.3_pc <- subset(HCE_7.3, (biotype_category == "protein_coding"))
+
+### define significance threshold and filter for significantly DE genes
+pa = 0.05
+
+HCE_23726_pc_sig <- subset(HCE_23726_pc, padj <= pa)
+HCE_7.1_pc_sig <- subset(HCE_7.1_pc, padj <= pa)
+HCE_7.3_pc_sig <- subset(HCE_7.3_pc, padj <= pa)
+
+### rename columns in preparation for merging, then select columns of interest
+colnames(HCE_23726_pc_sig)[colnames(HCE_23726_pc_sig) == "log2FoldChange"] <- "log2FoldChange_HCE_23726"
+colnames(HCE_7.1_pc_sig)[colnames(HCE_7.1_pc_sig) == "log2FoldChange"] <- "log2FoldChange_HCE_7.1"
+colnames(HCE_7.3_pc_sig)[colnames(HCE_7.3_pc_sig) == "log2FoldChange"] <- "log2FoldChange_HCE_7.3"
+
+colnames(HCE_23726_pc_sig)[colnames(HCE_23726_pc_sig) == "padj"] <- "padj_HCE_23726"
+colnames(HCE_7.1_pc_sig)[colnames(HCE_7.1_pc_sig) == "padj"] <- "padj_HCE_7.1"
+colnames(HCE_7.3_pc_sig)[colnames(HCE_7.3_pc_sig) == "padj"] <- "padj_HCE_7.3"
+
+HCE_23726_pc_sig <- HCE_23726_pc_sig %>% select("external_gene_name", contains("log2FoldChange"), contains("padj"))
+HCE_7.1_pc_sig <- HCE_7.1_pc_sig %>% select("external_gene_name", contains("log2FoldChange"), contains("padj"))
+HCE_7.3_pc_sig <- HCE_7.3_pc_sig %>% select("external_gene_name", contains("log2FoldChange"), contains("padj"))
+
+### merge using the external gene name 
+HCE_allstrain_pc <- merge(HCE_23726_pc_sig, HCE_7.1_pc_sig, all = TRUE)
+HCE_allstrain_pc <- merge(HCE_allstrain_pc, HCE_7.3_pc_sig, all = TRUE)
+
+### replace all NA/non-significant values with 0
+HCE_allstrain_pc[is.na(HCE_allstrain_pc)] <- 0
+
+### calculate mean log2FC
+HCE_allstrain_pc$HCE_log2FC_mean <- ((HCE_allstrain_pc$log2FoldChange_HCE_23726 + HCE_allstrain_pc$log2FoldChange_HCE_7.1 + HCE_allstrain_pc$log2FoldChange_HCE_7.3)/3)
+
+### calculate SD
+HCE_allstrain_pc$HCE_log2FC_sd <- apply(HCE_allstrain_pc[, c("log2FoldChange_HCE_23726","log2FoldChange_HCE_7.1", "log2FoldChange_HCE_7.3")], 1, sd)
+
+## combine the HCAE and HCE data
+HCAE_HCE_allstrain_pc <- merge(HCAE_allstrain_pc, HCE_allstrain_pc, all = TRUE)
+
+### replace all NA/non-significant values with 0 
+HCAE_HCE_allstrain_pc[is.na(HCAE_HCE_allstrain_pc)] <- 0
+
+### define the boundaries and gene subsets 
+upperlimit <- 3
+lowerlimit <- -0.75
+
+### add a column to categorize each gene into a respective gene set or not
+HCAE_HCE_allstrain_pc$gene_set <- 
+ifelse((HCAE_HCE_allstrain_pc$HCE_log2FC_mean > upperlimit & HCAE_HCE_allstrain_pc$HCAE_log2FC_mean > upperlimit), "HCE and HCAE Upregulated",  ifelse((HCAE_HCE_allstrain_pc$HCE_log2FC_mean < lowerlimit & HCAE_HCE_allstrain_pc$HCAE_log2FC_mean < lowerlimit), "HCE and HCAE Downregulated", ifelse((HCAE_HCE_allstrain_pc$HCE_log2FC_mean > upperlimit & HCAE_HCE_allstrain_pc$HCAE_log2FC_mean < upperlimit & HCAE_HCE_allstrain_pc$HCAE_log2FC_mean == 0), "HCE Only Upregulated", ifelse((HCAE_HCE_allstrain_pc$HCE_log2FC_mean < upperlimit & HCAE_HCE_allstrain_pc$HCAE_log2FC_mean > upperlimit & HCAE_HCE_allstrain_pc$HCE_log2FC_mean == 0), "HCAE Only Upregulated",  ifelse((HCAE_HCE_allstrain_pc$HCE_log2FC_mean < lowerlimit & HCAE_HCE_allstrain_pc$HCAE_log2FC_mean > lowerlimit & HCAE_HCE_allstrain_pc$HCAE_log2FC_mean == 0), "HCE Only Downregulated", ifelse((HCAE_HCE_allstrain_pc$HCE_log2FC_mean > lowerlimit & HCAE_HCE_allstrain_pc$HCAE_log2FC_mean < lowerlimit & HCAE_HCE_allstrain_pc$HCE_log2FC_mean == 0), "HCAE Only Downregulated", "Other"))))))
+
+### add a column to categorize each gene as in a gene set of interest or not
+HCAE_HCE_allstrain_pc$gene_set_binary <- ifelse(HCAE_HCE_allstrain_pc$gene_set == "Other", "No", "Yes") 
+
+### generate a list of the top 5 genes from each category (manually selected)
+top5genes_list <- c("SELE", "IL6", "CXCL6", "LIF", "C11orf96", "BNIP5", "SAA2", "SERPINA3", "CCL7", "SAA1", "RYR1", "ESPN", "ZACN", "ANP32E", "NEXN", "PRR15L", "SLC8A1", "ASCL2", "C9orf152", "KCNQ2", "CXCL8", "CXCL1", "TNF", "CCL20", "CXCL3", "KLF15", "ERMAP", "KAT6B", "HRCT1", "MAP2K6")
+
+### define which genes are within the top 5 gene list, and then add column with a gene name if they are a top gene to be displayed on the plot
+HCAE_HCE_allstrain_pc$label <- ifelse(HCAE_HCE_allstrain_pc$external_gene_name %in% top5genes_list, "Yes", "No")
+HCAE_HCE_allstrain_pc$label_name <- ifelse(HCAE_HCE_allstrain_pc$label == "Yes", HCAE_HCE_allstrain_pc$external_gene_name, "")
+
+### plotting
+colors <- c("HCE and HCAE Upregulated" = "#e41a1c", "HCE and HCAE Downregulated" = "#377eb8", "HCE Only Upregulated" = "#f781bf", "HCAE Only Upregulated" = "#ff7f00", "HCE Only Downregulated" = "#984ea3", "HCAE Only Downregulated" = "#4daf4a", "Other" = "#666666")
+
+HCAE_HCE_allstrain_pc_plot <- ggplot() + 
+  geom_hline(yintercept = c(upperlimit, lowerlimit), color = "grey", linetype = "dashed") + 
+  geom_hline(yintercept = 0, color = "grey") + 
+  geom_vline(xintercept = c(upperlimit, lowerlimit), color = "grey", linetype = "dashed") +
+  geom_vline(xintercept = 0, color = "grey") +
+  geom_pointrange(data = subset(HCAE_HCE_allstrain_pc, gene_set_binary == "Yes"), aes(x = HCAE_log2FC_mean, y = HCE_log2FC_mean, ymax = (HCE_log2FC_mean + HCE_log2FC_sd), ymin = (HCE_log2FC_mean - HCE_log2FC_sd), color = gene_set), alpha = 0.4, size = 0.45, stroke = 0.5) +
+  geom_pointrange(data = subset(HCAE_HCE_allstrain_pc, gene_set_binary == "Yes"), aes(x = HCAE_log2FC_mean, y = HCE_log2FC_mean, xmax = (HCAE_log2FC_mean + HCAE_log2FC_sd), xmin = (HCAE_log2FC_mean - HCAE_log2FC_sd), color = gene_set), alpha = 0.4, size = 0.45, stroke = 0.5) +
+  geom_point(data = subset(HCAE_HCE_allstrain_pc, gene_set_binary == "No"), aes(x = HCAE_log2FC_mean, y = HCE_log2FC_mean, color = gene_set), alpha = 0.4, size = 1.75, stroke = 0.5) +
+  geom_text_repel(data = HCAE_HCE_allstrain_pc, aes(x = HCAE_log2FC_mean, y = HCE_log2FC_mean, label = label_name, color = gene_set), seed = 55, min.segment.length = 0, box.padding = 0.85, show.legend = FALSE, size = 3, segment.size = 0.5) +
+  coord_cartesian(xlim = c(-11, 11), ylim = c(-11, 11)) +
+  labs(x = "HCAE log2FC", y = "HCE log2FC", color = "Gene Set") +
+  scale_color_manual(values = colors, breaks = c("HCE and HCAE Upregulated", "HCE Only Upregulated", "HCAE Only Upregulated", "HCE Only Downregulated", "HCAE Only Downregulated", "HCE and HCAE Downregulated", "Other")) +
+  theme_classic()
+  
+HCAE_HCE_allstrain_pc_plot
+
+png('HCAE_HCE_allstrain_pc_plot_label.png', width=8, height= 6, units = "in", res=300)
+HCAE_HCE_allstrain_pc_plot
+dev.off()
+
+
+```
+
+# Supplementary File 2 
+
+```{r}
+# get gene lists for each set
+red <- HCAE_HCE_allstrain_pc[HCAE_HCE_allstrain_pc$gene_set == "HCE and HCAE Upregulated", ]
+
+blue <- HCAE_HCE_allstrain_pc[HCAE_HCE_allstrain_pc$gene_set == "HCE and HCAE Downregulated", ]
+
+orange <- HCAE_HCE_allstrain_pc[HCAE_HCE_allstrain_pc$gene_set == "HCAE Only Upregulated", ]
+
+green <- HCAE_HCE_allstrain_pc[HCAE_HCE_allstrain_pc$gene_set == "HCAE Only Downregulated", ]
+
+pink <- HCAE_HCE_allstrain_pc[HCAE_HCE_allstrain_pc$gene_set == "HCE Only Upregulated", ]
+
+purple <- HCAE_HCE_allstrain_pc[HCAE_HCE_allstrain_pc$gene_set == "HCE Only Downregulated", ]
+
+gene_set_file <- rbind(red, blue, orange, green, pink, purple)
+
+gene_set_file <- gene_set_file[, 1:18]
+
+write.csv(gene_set_file, file = "SupplementaryFile2.csv", row.names=FALSE)
+
+### make a function to convert gene column into gene lists 
+make_gene_list <- function(input) {
+  gene_list <- as.vector(input$external_gene_name) 
+  return(gene_list)
+  }
+
+# use it 
+red_genelist <- make_gene_list(input = red) 
+blue_genelist <- make_gene_list(input = blue) 
+orange_genelist <- make_gene_list(input = orange) 
+green_genelist <- make_gene_list(input = green) 
+pink_genelist <- make_gene_list(input = pink) 
+purple_genelist <- make_gene_list(input = purple) 
+
+# write the lists to a csv
+write.csv(as.data.frame(red_genelist), file = "CONSERVED-UP-red_genelist.csv", row.names=FALSE)
+write.csv(as.data.frame(blue_genelist), file = "CONSERVED-DOWN-blue_genelist.csv", row.names=FALSE)
+write.csv(as.data.frame(orange_genelist), file = "HCAE-UP-orange_genelist.csv", row.names=FALSE)
+write.csv(as.data.frame(green_genelist), file = "HCAE-DOWN-green_genelist.csv", row.names=FALSE)
+write.csv(as.data.frame(pink_genelist), file = "HCE-UP-pink_genelist.csv", row.names=FALSE)
+write.csv(as.data.frame(purple_genelist), file = "HCE-DOWN-purple_genelist.csv", row.names=FALSE)
+
+```
+
+# Figure 2B - GO analysis of differential expression gene sets of interest 
+
+```{r}
+## Set up for GO analysis 
+### set sig threshold 
+pa <- 0.05 
+
+###  pick librarys to run gene lists against 
+dbs <- c("GO_Biological_Process_2018")
+
+###  make an enrichr function 
+run_enrichr <- function(input) {
+enriched <- enrichr(input, dbs)
+  return(enriched)
+  }
+
+### make a function to extract the GO biological process data
+extract_GO_BP <- function(input) {
+out <- rbind(input[["GO_Biological_Process_2018"]])  
+  return(out)
+  }
+
+## HCAE and HCE upregulated / RED 
+### run enrichr function on the isolated gene list
+HCAE_HCE_allstrain_pc_GoI_eR <- run_enrichr(input = red_genelist) 
+
+## extract the GO Biological Processes database results 
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP <- extract_GO_BP(input = HCAE_HCE_allstrain_pc_GoI_eR) 
+
+# reorder, select significant, pick top N terms for plotting 
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered <- HCAE_HCE_allstrain_pc_GoI_eR_GO_BP[order(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP$Combined.Score, decreasing = TRUE),] 
+
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig <- subset(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered, Adjusted.P.value <= pa)
+
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top <- HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig %>% slice(1:10)
+
+## barplot 
+RED_PLOT <- ggplot(data=HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top, aes(x=Combined.Score, y=reorder(Term, Combined.Score))) +
+  theme_bw() +
+  geom_bar(stat="identity", fill= "#e41a1c") + 
+  labs(y = "GO Biological Process Term", x = "Combined Score") +
+  coord_cartesian(xlim = c(0 , (1.15*max(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top$Combined.Score)))) +
+  scale_x_continuous(expand = c(0, 0)) 
+
+RED_PLOT_2 <- ggplot(data=HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top, aes(x=Combined.Score, y=reorder(Term, Combined.Score))) +
+  theme_bw() +
+  geom_bar(stat="identity", fill= "#e41a1c") + 
+  labs(y = " ", x = " ") +
+  coord_cartesian(xlim = c(0 , (1.15*max(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top$Combined.Score)))) +
+  scale_x_continuous(expand = c(0, 0)) 
+
+RED_PLOT
+
+png('RED_GOI_GO_BP_plot.png', width=10, height=3, units = "in", res=400)
+RED_PLOT_2
+dev.off()
+
+
+## HCAE and HCE downregulated / BLUE 
+############################################## NO SIG HITS 
+
+
+## HCAE Only Upregulated / ORANGE 
+### run enrichr function on the isolated gene list
+HCAE_HCE_allstrain_pc_GoI_eR <- run_enrichr(input = orange_genelist) 
+
+## extract the GO Biological Processes database results 
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP <- extract_GO_BP(input = HCAE_HCE_allstrain_pc_GoI_eR) 
+
+# reorder, select significant, pick top N terms for plotting 
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered <- HCAE_HCE_allstrain_pc_GoI_eR_GO_BP[order(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP$Combined.Score, decreasing = TRUE),] 
+
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig <- subset(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered, Adjusted.P.value <= pa)
+
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top <- HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig %>% slice(1:10)
+
+## barplot 
+ORANGE_PLOT <- ggplot(data=HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top, aes(x=Combined.Score, y=reorder(Term, Combined.Score))) +
+  theme_bw() +
+  geom_bar(stat="identity", fill= "#ff7f00") + 
+  labs(y = "GO Biological Process Term", x = "Combined Score") +
+  coord_cartesian(xlim = c(0 , (1.15*max(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top$Combined.Score)))) +
+  scale_x_continuous(expand = c(0, 0)) 
+
+ORANGE_PLOT_2 <- ggplot(data=HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top, aes(x=Combined.Score, y=reorder(Term, Combined.Score))) +
+  theme_bw() +
+  geom_bar(stat="identity", fill= "#ff7f00") + 
+  labs(y = " ", x = " ") +
+  coord_cartesian(xlim = c(0 , (1.15*max(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top$Combined.Score)))) +
+  scale_x_continuous(expand = c(0, 0)) 
+
+ORANGE_PLOT
+
+png('ORANGE_GOI_GO_BP_plot.png', width=10, height=3, units = "in", res=400)
+ORANGE_PLOT_2
+dev.off()
+
+
+## HCE Only Upregulated / PINK 
+### run enrichr function on the isolated gene list
+HCAE_HCE_allstrain_pc_GoI_eR <- run_enrichr(input = pink_genelist) 
+
+## extract the GO Biological Processes database results 
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP <- extract_GO_BP(input = HCAE_HCE_allstrain_pc_GoI_eR) 
+
+# reorder, select significant, remove low gene count hits, pick top N terms for plotting 
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered <- HCAE_HCE_allstrain_pc_GoI_eR_GO_BP[order(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP$Combined.Score, decreasing = TRUE),] 
+
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig <- subset(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered, Adjusted.P.value <= pa)
+
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top <- HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig %>% slice(1:10)
+
+## barplot 
+PINK_PLOT <- ggplot(data=HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top, aes(x=Combined.Score, y=reorder(Term, Combined.Score))) +
+  theme_bw() +
+  geom_bar(stat="identity", fill= "#f781bf") + 
+  labs(y = "GO Biological Process Term", x = "Combined Score") +
+  coord_cartesian(xlim = c(0 , (1.15*max(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top$Combined.Score)))) +
+  scale_x_continuous(expand = c(0, 0)) 
+
+PINK_PLOT_2 <- ggplot(data=HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top, aes(x=Combined.Score, y=reorder(Term, Combined.Score))) +
+  theme_bw() +
+  geom_bar(stat="identity", fill= "#f781bf") + 
+  labs(y = "", x = " ") +
+  coord_cartesian(xlim = c(0 , (1.15*max(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top$Combined.Score)))) +
+  scale_x_continuous(expand = c(0, 0)) 
+
+PINK_PLOT
+
+png('PINK_GOI_GO_BP_plot.png', width=10, height=3, units = "in", res=400)
+PINK_PLOT_2
+dev.off()
+
+## HCAE Only Downregulated / GREEN 
+### run enrichr function on the isolated gene list
+HCAE_HCE_allstrain_pc_GoI_eR <- run_enrichr(input = green_genelist) 
+
+## extract the GO Biological Processes database results 
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP <- extract_GO_BP(input = HCAE_HCE_allstrain_pc_GoI_eR) 
+
+# reorder, select significant, pick top N terms for plotting 
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered <- HCAE_HCE_allstrain_pc_GoI_eR_GO_BP[order(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP$Combined.Score, decreasing = TRUE),] 
+
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig <- subset(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered, Adjusted.P.value <= pa)
+
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top <- HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig %>% slice(1:10)
+
+## barplot 
+GREEN_PLOT <- ggplot(data=HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top, aes(x=Combined.Score, y=reorder(Term, Combined.Score))) +
+  theme_bw() +
+  geom_bar(stat="identity", fill= "#4daf4a") + 
+  labs(y = "GO Biological Process Term", x = "Combined Score") +
+  coord_cartesian(xlim = c(0 , (1.15*max(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top$Combined.Score)))) +
+  scale_x_continuous(expand = c(0, 0)) 
+
+GREEN_PLOT_2 <- ggplot(data=HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top, aes(x=Combined.Score, y=reorder(Term, Combined.Score))) +
+  theme_bw() +
+  geom_bar(stat="identity", fill= "#4daf4a") + 
+  labs(y = " ", x = " ") +
+  coord_cartesian(xlim = c(0 , (1.15*max(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top$Combined.Score)))) +
+  scale_x_continuous(expand = c(0, 0)) 
+
+GREEN_PLOT
+
+png('GREEN_GOI_GO_BP_plot.png', width=10, height=3, units = "in", res=400)
+GREEN_PLOT_2
+dev.off()
+
+
+
+
+## HCE Only Downregulated / PURPLE 
+### run enrichr function on the isolated gene list
+HCAE_HCE_allstrain_pc_GoI_eR <- run_enrichr(input = purple_genelist) 
+
+## extract the GO Biological Processes database results 
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP <- extract_GO_BP(input = HCAE_HCE_allstrain_pc_GoI_eR) 
+
+# reorder, select significant, pick top N terms for plotting 
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered <- HCAE_HCE_allstrain_pc_GoI_eR_GO_BP[order(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP$Combined.Score, decreasing = TRUE),] 
+
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig <- subset(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered, Adjusted.P.value <= pa)
+
+HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top <- HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig %>% slice(1:10)
+
+## barplot 
+PURPLE_PLOT <- ggplot(data=HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top, aes(x=Combined.Score, y=reorder(Term, Combined.Score))) +
+  theme_bw() +
+  geom_bar(stat="identity", fill= "#984ea3") + 
+  labs(y = "GO Biological Process Term", x = "Combined Score") +
+  coord_cartesian(xlim = c(0 , (1.15*max(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top$Combined.Score)))) +
+  scale_x_continuous(expand = c(0, 0)) 
+
+PURPLE_PLOT_2 <- ggplot(data=HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top, aes(x=Combined.Score, y=reorder(Term, Combined.Score))) +
+  theme_bw() +
+  geom_bar(stat="identity", fill= "#984ea3") + 
+  labs(y = " ", x = "Combined Score") +
+  coord_cartesian(xlim = c(0 , (1.15*max(HCAE_HCE_allstrain_pc_GoI_eR_GO_BP_ordered_sig_top$Combined.Score)))) +
+  scale_x_continuous(expand = c(0, 0)) 
+
+PURPLE_PLOT
+
+png('PURPLE_GOI_GO_BP_plot.png', width=10, height=3, units = "in", res=400)
+PURPLE_PLOT_2
+dev.off()
+
+
+```
+
+
+```{r}
+# use egg to make the plot size the same, regardless of GO term length 
+
+GOI_GO_combo_plot <- ggarrange(RED_PLOT_2, ORANGE_PLOT_2, PINK_PLOT_2, GREEN_PLOT_2, PURPLE_PLOT_2, heights = c(10, 10, 10, 10, 4), ncol=1)
+
+png('GOI_GO_combo_plot.png', width=10, height=8, units = "in", res=600)
+GOI_GO_combo_plot
+dev.off()
+
+```
+
+
+#################################################################################################################################################################
+
+# Re-load data 
+
+```{r}
+
+# read in data for 2 human cell lines with each of 3 fuso strains
+
+## HCAE
+HCAE_23726 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCAE_23726.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+HCAE_7.1 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCAE_7.1.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+HCAE_7.3 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCAE_7.3.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+## HCE
+HCE_23726 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCE_23726.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+HCE_7.1 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCE_7.1.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+HCE_7.3 <- read.table(file = "/Users/Cody/Documents/holt_lab/INVASION_EXP/data/v5/HCE_7.3.withNames.deseq.tsv", fill = TRUE, header = TRUE, sep = '\t')
+
+
+```
+
+
+# Re-isolate significantly differentially expressed protein coding genes
+
+```{r}
+## HCAE - isolate significantly DE protein coding genes from each condition
+### filter to protein coding genes only
+HCAE_23726_pc <- subset(HCAE_23726, (biotype_category == "protein_coding"))
+HCAE_7.1_pc <- subset(HCAE_7.1, (biotype_category == "protein_coding"))
+HCAE_7.3_pc <- subset(HCAE_7.3, (biotype_category == "protein_coding"))
+
+### define significance threshold and filter for significantly DE genes
+pa = 0.05
+
+HCAE_23726_pc_sig <- subset(HCAE_23726_pc, padj <= pa)
+HCAE_7.1_pc_sig <- subset(HCAE_7.1_pc, padj <= pa)
+HCAE_7.3_pc_sig <- subset(HCAE_7.3_pc, padj <= pa)
+
+## HCE - isolate significantly DE protein coding genes from each condition
+### filter to protein coding genes only
+HCE_23726_pc <- subset(HCE_23726, (biotype_category == "protein_coding"))
+HCE_7.1_pc <- subset(HCE_7.1, (biotype_category == "protein_coding"))
+HCE_7.3_pc <- subset(HCE_7.3, (biotype_category == "protein_coding"))
+
+### define significance threshold and filter for significantly DE genes
+pa = 0.05
+
+HCE_23726_pc_sig <- subset(HCE_23726_pc, padj <= pa)
+HCE_7.1_pc_sig <- subset(HCE_7.1_pc, padj <= pa)
+HCE_7.3_pc_sig <- subset(HCE_7.3_pc, padj <= pa)
+
+```
+
+
+# Re-split into upregulated and downregulated sets
+
+```{r}
+## HCAE
+HCAE_23726_sig_up <- subset(HCAE_23726_pc_sig, log2FoldChange > 0)
+HCAE_23726_sig_dn <- subset(HCAE_23726_pc_sig, log2FoldChange < 0)
+HCAE_7.1_sig_up <- subset(HCAE_7.1_pc_sig, log2FoldChange > 0)
+HCAE_7.1_sig_dn <- subset(HCAE_7.1_pc_sig, log2FoldChange < 0)
+HCAE_7.3_sig_up <- subset(HCAE_7.3_pc_sig, log2FoldChange > 0)
+HCAE_7.3_sig_dn <- subset(HCAE_7.3_pc_sig, log2FoldChange < 0)
+
+## HCE
+HCE_23726_sig_up <- subset(HCE_23726_pc_sig, log2FoldChange > 0)
+HCE_23726_sig_dn <- subset(HCE_23726_pc_sig, log2FoldChange < 0)
+HCE_7.1_sig_up <- subset(HCE_7.1_pc_sig, log2FoldChange > 0)
+HCE_7.1_sig_dn <- subset(HCE_7.1_pc_sig, log2FoldChange < 0)
+HCE_7.3_sig_up <- subset(HCE_7.3_pc_sig, log2FoldChange > 0)
+HCE_7.3_sig_dn <- subset(HCE_7.3_pc_sig, log2FoldChange < 0)
+
+
+```
+
+## Run enrichR
+
+```{r}
+## make a function to convert gene column into gene lists 
+make_gene_list <- function(input) {
+  gene_list <- as.vector(input$external_gene_name) 
+  return(gene_list)
+  }
+
+## use it
+HCAE_23726_sig_up_GL <- make_gene_list(input = HCAE_23726_sig_up) 
+HCAE_23726_sig_dn_GL <- make_gene_list(input = HCAE_23726_sig_dn) 
+HCAE_7.1_sig_up_GL <- make_gene_list(input = HCAE_7.1_sig_up) 
+HCAE_7.1_sig_dn_GL <- make_gene_list(input = HCAE_7.1_sig_dn) 
+HCAE_7.3_sig_up_GL <- make_gene_list(input = HCAE_7.3_sig_up) 
+HCAE_7.3_sig_dn_GL <- make_gene_list(input = HCAE_7.3_sig_dn) 
+
+HCE_23726_sig_up_GL <- make_gene_list(input = HCE_23726_sig_up) 
+HCE_23726_sig_dn_GL <- make_gene_list(input = HCE_23726_sig_dn) 
+HCE_7.1_sig_up_GL <- make_gene_list(input = HCE_7.1_sig_up) 
+HCE_7.1_sig_dn_GL <- make_gene_list(input = HCE_7.1_sig_dn) 
+HCE_7.3_sig_up_GL <- make_gene_list(input = HCE_7.3_sig_up) 
+HCE_7.3_sig_dn_GL <- make_gene_list(input = HCE_7.3_sig_dn) 
+
+## pick librarys to run gene lists against 
+dbs <- c("GO_Biological_Process_2018")
+
+## make an enrichr function 
+run_enrichr <- function(input) {
+enriched <- enrichr(input, dbs)
+  return(enriched)
+  }
+
+### run enrichr function on both the gene lists (upregulated and downregulated separately)
+HCAE_23726_sig_up_GL_eR <- run_enrichr(input = HCAE_23726_sig_up_GL) 
+HCAE_23726_sig_dn_GL_eR <- run_enrichr(input = HCAE_23726_sig_dn_GL)
+HCAE_7.1_sig_up_GL_eR <- run_enrichr(input = HCAE_7.1_sig_up_GL) 
+HCAE_7.1_sig_dn_GL_eR <- run_enrichr(input = HCAE_7.1_sig_dn_GL)
+HCAE_7.3_sig_up_GL_eR <- run_enrichr(input = HCAE_7.3_sig_up_GL) 
+HCAE_7.3_sig_dn_GL_eR <- run_enrichr(input = HCAE_7.3_sig_dn_GL)
+
+HCE_23726_sig_up_GL_eR <- run_enrichr(input = HCE_23726_sig_up_GL) 
+HCE_23726_sig_dn_GL_eR <- run_enrichr(input = HCE_23726_sig_dn_GL)
+HCE_7.1_sig_up_GL_eR <- run_enrichr(input = HCE_7.1_sig_up_GL) 
+HCE_7.1_sig_dn_GL_eR <- run_enrichr(input = HCE_7.1_sig_dn_GL)
+HCE_7.3_sig_up_GL_eR <- run_enrichr(input = HCE_7.3_sig_up_GL) 
+HCE_7.3_sig_dn_GL_eR <- run_enrichr(input = HCE_7.3_sig_dn_GL)
+
+```
+
+
+```{r}
+#### separated this out as it is nice to re-run without re-querying enrichR 
+## extract the GO Biological Processes database results 
+extract_GO_BP <- function(input) {
+out <- rbind(input[["GO_Biological_Process_2018"]])  
+  return(out)
+  }
+
+HCAE_23726_sig_up_GL_eR_GO_BP <- extract_GO_BP(input = HCAE_23726_sig_up_GL_eR) 
+HCAE_23726_sig_dn_GL_eR_GO_BP <- extract_GO_BP(input = HCAE_23726_sig_dn_GL_eR) 
+HCAE_7.1_sig_up_GL_eR_GO_BP <- extract_GO_BP(input = HCAE_7.1_sig_up_GL_eR) 
+HCAE_7.1_sig_dn_GL_eR_GO_BP <- extract_GO_BP(input = HCAE_7.1_sig_dn_GL_eR) 
+HCAE_7.3_sig_up_GL_eR_GO_BP <- extract_GO_BP(input = HCAE_7.3_sig_up_GL_eR) 
+HCAE_7.3_sig_dn_GL_eR_GO_BP <- extract_GO_BP(input = HCAE_7.3_sig_dn_GL_eR) 
+
+HCE_23726_sig_up_GL_eR_GO_BP <- extract_GO_BP(input = HCE_23726_sig_up_GL_eR) 
+HCE_23726_sig_dn_GL_eR_GO_BP <- extract_GO_BP(input = HCE_23726_sig_dn_GL_eR) 
+HCE_7.1_sig_up_GL_eR_GO_BP <- extract_GO_BP(input = HCE_7.1_sig_up_GL_eR) 
+HCE_7.1_sig_dn_GL_eR_GO_BP <- extract_GO_BP(input = HCE_7.1_sig_dn_GL_eR) 
+HCE_7.3_sig_up_GL_eR_GO_BP <- extract_GO_BP(input = HCE_7.3_sig_up_GL_eR) 
+HCE_7.3_sig_dn_GL_eR_GO_BP <- extract_GO_BP(input = HCE_7.3_sig_dn_GL_eR) 
+
+
+```
+
+# Identify the top 25 terms by total score sum for upregulated and downregulated gene sets
+
+```{r}
+
+# up
+HCAE_23726_sig_up_GL_eR_GO_BP <- subset(HCAE_23726_sig_up_GL_eR_GO_BP, Adjusted.P.value <= pa)
+HCAE_7.1_sig_up_GL_eR_GO_BP <- subset(HCAE_7.1_sig_up_GL_eR_GO_BP, Adjusted.P.value <= pa)
+HCAE_7.3_sig_up_GL_eR_GO_BP <- subset(HCAE_7.3_sig_up_GL_eR_GO_BP, Adjusted.P.value <= pa)
+
+HCE_23726_sig_up_GL_eR_GO_BP <- subset(HCE_23726_sig_up_GL_eR_GO_BP, Adjusted.P.value <= pa)
+HCE_7.1_sig_up_GL_eR_GO_BP <- subset(HCE_7.1_sig_up_GL_eR_GO_BP, Adjusted.P.value <= pa)
+HCE_7.3_sig_up_GL_eR_GO_BP <- subset(HCE_7.3_sig_up_GL_eR_GO_BP, Adjusted.P.value <= pa)
+
+colnames(HCAE_23726_sig_up_GL_eR_GO_BP)[colnames(HCAE_23726_sig_up_GL_eR_GO_BP) == 'Combined.Score'] <- 'Combined.Score_HCAE_23726'
+colnames(HCAE_7.1_sig_up_GL_eR_GO_BP)[colnames(HCAE_7.1_sig_up_GL_eR_GO_BP) == 'Combined.Score'] <- 'Combined.Score_HCAE_7.1'
+colnames(HCAE_7.3_sig_up_GL_eR_GO_BP)[colnames(HCAE_7.3_sig_up_GL_eR_GO_BP) == 'Combined.Score'] <- 'Combined.Score_HCAE_7.3'
+
+colnames(HCE_23726_sig_up_GL_eR_GO_BP)[colnames(HCE_23726_sig_up_GL_eR_GO_BP) == 'Combined.Score'] <- 'Combined.Score_HCE_23726'
+colnames(HCE_7.1_sig_up_GL_eR_GO_BP)[colnames(HCE_7.1_sig_up_GL_eR_GO_BP) == 'Combined.Score'] <- 'Combined.Score_HCE_7.1'
+colnames(HCE_7.3_sig_up_GL_eR_GO_BP)[colnames(HCE_7.3_sig_up_GL_eR_GO_BP) == 'Combined.Score'] <- 'Combined.Score_HCE_7.3'
+
+HCAE_23726_sig_up_GL_eR_GO_BP <- HCAE_23726_sig_up_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"))
+HCAE_7.1_sig_up_GL_eR_GO_BP <- HCAE_7.1_sig_up_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"))
+HCAE_7.3_sig_up_GL_eR_GO_BP <- HCAE_7.3_sig_up_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"))
+
+HCE_23726_sig_up_GL_eR_GO_BP <- HCE_23726_sig_up_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"))
+HCE_7.1_sig_up_GL_eR_GO_BP <- HCE_7.1_sig_up_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"))
+HCE_7.3_sig_up_GL_eR_GO_BP <- HCE_7.3_sig_up_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"))
+
+all_GO_up_top <- merge(HCAE_23726_sig_up_GL_eR_GO_BP, HCAE_7.1_sig_up_GL_eR_GO_BP, all = TRUE)
+all_GO_up_top <- merge(all_GO_up_top, HCAE_7.3_sig_up_GL_eR_GO_BP, all = TRUE)
+
+all_GO_up_top <- merge(all_GO_up_top, HCE_23726_sig_up_GL_eR_GO_BP, all = TRUE)
+all_GO_up_top <- merge(all_GO_up_top, HCE_7.1_sig_up_GL_eR_GO_BP, all = TRUE)
+all_GO_up_top <- merge(all_GO_up_top, HCE_7.3_sig_up_GL_eR_GO_BP, all = TRUE)
+
+all_GO_up_top [is.na(all_GO_up_top)] <- 0
+
+all_GO_up_top["Total_score"] <- (all_GO_up_top$Combined.Score_HCAE_23726 + all_GO_up_top$Combined.Score_HCAE_7.1 + all_GO_up_top$Combined.Score_HCAE_7.3 + all_GO_up_top$Combined.Score_HCE_23726 + all_GO_up_top$Combined.Score_HCE_7.1 + all_GO_up_top$Combined.Score_HCE_7.3)
+
+all_GO_up_top <- all_GO_up_top[order(all_GO_up_top$Total_score, decreasing = TRUE),]  
+
+all_GO_up_top_25 <- all_GO_up_top %>% slice(1:25)
+
+all_GO_up_top_25_terms <- as.factor(all_GO_up_top_25$Term)
+
+# down
+HCAE_23726_sig_dn_GL_eR_GO_BP <- subset(HCAE_23726_sig_dn_GL_eR_GO_BP, Adjusted.P.value <= pa)
+HCAE_7.1_sig_dn_GL_eR_GO_BP <- subset(HCAE_7.1_sig_dn_GL_eR_GO_BP, Adjusted.P.value <= pa)
+HCAE_7.3_sig_dn_GL_eR_GO_BP <- subset(HCAE_7.3_sig_dn_GL_eR_GO_BP, Adjusted.P.value <= pa)
+
+HCE_23726_sig_dn_GL_eR_GO_BP <- subset(HCE_23726_sig_dn_GL_eR_GO_BP, Adjusted.P.value <= pa)
+HCE_7.1_sig_dn_GL_eR_GO_BP <- subset(HCE_7.1_sig_dn_GL_eR_GO_BP, Adjusted.P.value <= pa)
+HCE_7.3_sig_dn_GL_eR_GO_BP <- subset(HCE_7.3_sig_dn_GL_eR_GO_BP, Adjusted.P.value <= pa)
+
+colnames(HCAE_23726_sig_dn_GL_eR_GO_BP)[colnames(HCAE_23726_sig_dn_GL_eR_GO_BP) == 'Combined.Score'] <- 'Combined.Score_HCAE_23726'
+colnames(HCAE_7.1_sig_dn_GL_eR_GO_BP)[colnames(HCAE_7.1_sig_dn_GL_eR_GO_BP) == 'Combined.Score'] <- 'Combined.Score_HCAE_7.1'
+colnames(HCAE_7.3_sig_dn_GL_eR_GO_BP)[colnames(HCAE_7.3_sig_dn_GL_eR_GO_BP) == 'Combined.Score'] <- 'Combined.Score_HCAE_7.3'
+
+colnames(HCE_23726_sig_dn_GL_eR_GO_BP)[colnames(HCE_23726_sig_dn_GL_eR_GO_BP) == 'Combined.Score'] <- 'Combined.Score_HCE_23726'
+colnames(HCE_7.1_sig_dn_GL_eR_GO_BP)[colnames(HCE_7.1_sig_dn_GL_eR_GO_BP) == 'Combined.Score'] <- 'Combined.Score_HCE_7.1'
+colnames(HCE_7.3_sig_dn_GL_eR_GO_BP)[colnames(HCE_7.3_sig_dn_GL_eR_GO_BP) == 'Combined.Score'] <- 'Combined.Score_HCE_7.3'
+
+HCAE_23726_sig_dn_GL_eR_GO_BP <- HCAE_23726_sig_dn_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"))
+HCAE_7.1_sig_dn_GL_eR_GO_BP <- HCAE_7.1_sig_dn_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"))
+HCAE_7.3_sig_dn_GL_eR_GO_BP <- HCAE_7.3_sig_dn_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"))
+
+HCE_23726_sig_dn_GL_eR_GO_BP <- HCE_23726_sig_dn_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"))
+HCE_7.1_sig_dn_GL_eR_GO_BP <- HCE_7.1_sig_dn_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"))
+HCE_7.3_sig_dn_GL_eR_GO_BP <- HCE_7.3_sig_dn_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"))
+
+all_GO_dn_top <- merge(HCAE_23726_sig_dn_GL_eR_GO_BP, HCAE_7.1_sig_dn_GL_eR_GO_BP, all = TRUE)
+all_GO_dn_top <- merge(all_GO_dn_top, HCAE_7.3_sig_dn_GL_eR_GO_BP, all = TRUE)
+
+all_GO_dn_top <- merge(all_GO_dn_top, HCE_23726_sig_dn_GL_eR_GO_BP, all = TRUE)
+all_GO_dn_top <- merge(all_GO_dn_top, HCE_7.1_sig_dn_GL_eR_GO_BP, all = TRUE)
+all_GO_dn_top <- merge(all_GO_dn_top, HCE_7.3_sig_dn_GL_eR_GO_BP, all = TRUE)
+
+all_GO_dn_top [is.na(all_GO_dn_top)] <- 0
+
+all_GO_dn_top["Total_score"] <- (all_GO_dn_top$Combined.Score_HCAE_23726 + all_GO_dn_top$Combined.Score_HCAE_7.1 + all_GO_dn_top$Combined.Score_HCAE_7.3 + all_GO_dn_top$Combined.Score_HCE_23726 + all_GO_dn_top$Combined.Score_HCE_7.1 + all_GO_dn_top$Combined.Score_HCE_7.3)
+
+all_GO_dn_top <- all_GO_dn_top[order(all_GO_dn_top$Total_score, decreasing = TRUE),]  
+
+all_GO_dn_top_25 <- all_GO_dn_top %>% slice(1:25)
+
+all_GO_dn_top_25_terms <- as.factor(all_GO_dn_top_25$Term)
+
+
+```
+
+# Re-load the results 
+
+```{r}
+#### separated this out as it is nice to re-run without re-querying enrichR 
+
+## extract the GO Biological Processes database results 
+extract_GO_BP <- function(input) {
+out <- rbind(input[["GO_Biological_Process_2018"]])  
+  return(out)
+  }
+
+HCAE_23726_sig_up_GL_eR_GO_BP <- extract_GO_BP(input = HCAE_23726_sig_up_GL_eR) 
+HCAE_23726_sig_dn_GL_eR_GO_BP <- extract_GO_BP(input = HCAE_23726_sig_dn_GL_eR) 
+HCAE_7.1_sig_up_GL_eR_GO_BP <- extract_GO_BP(input = HCAE_7.1_sig_up_GL_eR) 
+HCAE_7.1_sig_dn_GL_eR_GO_BP <- extract_GO_BP(input = HCAE_7.1_sig_dn_GL_eR) 
+HCAE_7.3_sig_up_GL_eR_GO_BP <- extract_GO_BP(input = HCAE_7.3_sig_up_GL_eR) 
+HCAE_7.3_sig_dn_GL_eR_GO_BP <- extract_GO_BP(input = HCAE_7.3_sig_dn_GL_eR) 
+
+HCE_23726_sig_up_GL_eR_GO_BP <- extract_GO_BP(input = HCE_23726_sig_up_GL_eR) 
+HCE_23726_sig_dn_GL_eR_GO_BP <- extract_GO_BP(input = HCE_23726_sig_dn_GL_eR) 
+HCE_7.1_sig_up_GL_eR_GO_BP <- extract_GO_BP(input = HCE_7.1_sig_up_GL_eR) 
+HCE_7.1_sig_dn_GL_eR_GO_BP <- extract_GO_BP(input = HCE_7.1_sig_dn_GL_eR) 
+HCE_7.3_sig_up_GL_eR_GO_BP <- extract_GO_BP(input = HCE_7.3_sig_up_GL_eR) 
+HCE_7.3_sig_dn_GL_eR_GO_BP <- extract_GO_BP(input = HCE_7.3_sig_dn_GL_eR) 
+
+
+```
+
+# Add a column that assigns each GO term as below or above the significance cut off
+
+```{r}
+## filter to significant GO terms for each set - up 
+
+pa = 0.05 
+
+HCAE_23726_sig_up_GL_eR_GO_BP$sig_boo <- ifelse(HCAE_23726_sig_up_GL_eR_GO_BP$Adjusted.P.value < 0.05, "Significant", "Not Significant")
+HCAE_7.1_sig_up_GL_eR_GO_BP$sig_boo <- ifelse(HCAE_7.1_sig_up_GL_eR_GO_BP$Adjusted.P.value < 0.05, "Significant", "Not Significant")
+HCAE_7.3_sig_up_GL_eR_GO_BP$sig_boo <- ifelse(HCAE_7.3_sig_up_GL_eR_GO_BP$Adjusted.P.value < 0.05, "Significant", "Not Significant")
+
+HCE_23726_sig_up_GL_eR_GO_BP$sig_boo <- ifelse(HCE_23726_sig_up_GL_eR_GO_BP$Adjusted.P.value < 0.05, "Significant", "Not Significant")
+HCE_7.1_sig_up_GL_eR_GO_BP$sig_boo <- ifelse(HCE_7.1_sig_up_GL_eR_GO_BP$Adjusted.P.value < 0.05, "Significant", "Not Significant")
+HCE_7.3_sig_up_GL_eR_GO_BP$sig_boo <- ifelse(HCE_7.3_sig_up_GL_eR_GO_BP$Adjusted.P.value < 0.05, "Significant", "Not Significant")
+
+## filter to significant GO terms for each set - down
+
+pa = 0.05 
+
+HCAE_23726_sig_dn_GL_eR_GO_BP$sig_boo <- ifelse(HCAE_23726_sig_dn_GL_eR_GO_BP$Adjusted.P.value < 0.05, "Significant", "Not Significant")
+HCAE_7.1_sig_dn_GL_eR_GO_BP$sig_boo <- ifelse(HCAE_7.1_sig_dn_GL_eR_GO_BP$Adjusted.P.value < 0.05, "Significant", "Not Significant")
+HCAE_7.3_sig_dn_GL_eR_GO_BP$sig_boo <- ifelse(HCAE_7.3_sig_dn_GL_eR_GO_BP$Adjusted.P.value < 0.05, "Significant", "Not Significant")
+
+HCE_23726_sig_dn_GL_eR_GO_BP$sig_boo <- ifelse(HCE_23726_sig_dn_GL_eR_GO_BP$Adjusted.P.value < 0.05, "Significant", "Not Significant")
+HCE_7.1_sig_dn_GL_eR_GO_BP$sig_boo <- ifelse(HCE_7.1_sig_dn_GL_eR_GO_BP$Adjusted.P.value < 0.05, "Significant", "Not Significant")
+HCE_7.3_sig_dn_GL_eR_GO_BP$sig_boo <- ifelse(HCE_7.3_sig_dn_GL_eR_GO_BP$Adjusted.P.value < 0.05, "Significant", "Not Significant")
+
+
+```
+
+# Figure 3A. Upregulated, Gene set enrichment analysis (GSEA) of all significantly DE human protein-coding genes in response to various Fn strains. 
+
+```{r}
+HCAE_23726_sig_up_GL_eR_GO_BP_extr1 <- HCAE_23726_sig_up_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"), "sig_boo")
+HCAE_7.1_sig_up_GL_eR_GO_BP_extr1 <- HCAE_7.1_sig_up_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"), "sig_boo")
+HCAE_7.3_sig_up_GL_eR_GO_BP_extr1 <- HCAE_7.3_sig_up_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"), "sig_boo")
+
+HCE_23726_sig_up_GL_eR_GO_BP_extr1 <- HCE_23726_sig_up_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"), "sig_boo")
+HCE_7.1_sig_up_GL_eR_GO_BP_extr1 <- HCE_7.1_sig_up_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"), "sig_boo")
+HCE_7.3_sig_up_GL_eR_GO_BP_extr1 <- HCE_7.3_sig_up_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"), "sig_boo")
+
+# add a column specifying condition 
+HCAE_23726_sig_up_GL_eR_GO_BP_extr1['Condition'] = 'HCAE_23726'
+HCAE_7.1_sig_up_GL_eR_GO_BP_extr1['Condition'] = 'HCAE_7.1'
+HCAE_7.3_sig_up_GL_eR_GO_BP_extr1['Condition'] = 'HCAE_7.3'
+
+HCE_23726_sig_up_GL_eR_GO_BP_extr1['Condition'] = 'HCE_23726'
+HCE_7.1_sig_up_GL_eR_GO_BP_extr1['Condition'] = 'HCE_7.1'
+HCE_7.3_sig_up_GL_eR_GO_BP_extr1['Condition'] = 'HCE_7.3'
+
+# combine 
+all_GO_up <- rbind(HCAE_23726_sig_up_GL_eR_GO_BP_extr1, HCAE_7.1_sig_up_GL_eR_GO_BP_extr1, HCAE_7.3_sig_up_GL_eR_GO_BP_extr1, HCE_23726_sig_up_GL_eR_GO_BP_extr1, HCE_7.1_sig_up_GL_eR_GO_BP_extr1, HCE_7.3_sig_up_GL_eR_GO_BP_extr1)
+
+
+#make a function to extract those GO terms
+run_GO_extract <- function(input) {
+out <- filter(input, input$Term %in% all_GO_up_top_25_terms)
+  return(out)
+  }
+
+####################
+
+# pull the top 50 terms out of the all_GO_up
+all_GO_up_top_25_terms_df <- run_GO_extract(input = all_GO_up) 
+
+all_GO_up_top_25_terms_df <- transform(all_GO_up_top_25_terms_df, Term = factor(Term, levels = all_GO_up_top_25_terms))
+
+# plot 
+all_GO_bubble_plot_up <- ggplot(all_GO_up_top_25_terms_df, aes(x = Condition, y=factor(Term, levels = rev(levels(factor(Term)))), size = Combined.Score, color = sig_boo)) +
+  geom_point(alpha = 0.5) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_colour_manual(values = c("grey", "#D55E00")) +
+  labs(size = "Combined Score", x = "Condition", y = "GO Term", color = expression("Adj. P value ("<="0.05)")) 
+
+
+
+all_GO_bubble_plot_up
+
+png('all_GO_bubble_plot_up.png', width=11, height=6, units = "in", res=400)
+all_GO_bubble_plot_up
+dev.off()
+
+
+```
+
+# Figure 3B. Downregulated, Gene set enrichment analysis (GSEA) of all significantly DE human protein-coding genes in response to various Fn strains. 
+
+```{r}
+HCAE_23726_sig_dn_GL_eR_GO_BP_extr1 <- HCAE_23726_sig_dn_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"), "sig_boo")
+HCAE_7.1_sig_dn_GL_eR_GO_BP_extr1 <- HCAE_7.1_sig_dn_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"), "sig_boo")
+HCAE_7.3_sig_dn_GL_eR_GO_BP_extr1 <- HCAE_7.3_sig_dn_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"), "sig_boo")
+
+HCE_23726_sig_dn_GL_eR_GO_BP_extr1 <- HCE_23726_sig_dn_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"), "sig_boo")
+HCE_7.1_sig_dn_GL_eR_GO_BP_extr1 <- HCE_7.1_sig_dn_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"), "sig_boo")
+HCE_7.3_sig_dn_GL_eR_GO_BP_extr1 <- HCE_7.3_sig_dn_GL_eR_GO_BP %>% select("Term", contains("Combined.Score"), "sig_boo")
+
+# add a column specifying condition 
+HCAE_23726_sig_dn_GL_eR_GO_BP_extr1['Condition'] = 'HCAE_23726'
+HCAE_7.1_sig_dn_GL_eR_GO_BP_extr1['Condition'] = 'HCAE_7.1'
+HCAE_7.3_sig_dn_GL_eR_GO_BP_extr1['Condition'] = 'HCAE_7.3'
+
+HCE_23726_sig_dn_GL_eR_GO_BP_extr1['Condition'] = 'HCE_23726'
+HCE_7.1_sig_dn_GL_eR_GO_BP_extr1['Condition'] = 'HCE_7.1'
+HCE_7.3_sig_dn_GL_eR_GO_BP_extr1['Condition'] = 'HCE_7.3'
+
+# combine 
+all_GO_dn <- rbind(HCAE_23726_sig_dn_GL_eR_GO_BP_extr1, HCAE_7.1_sig_dn_GL_eR_GO_BP_extr1, HCAE_7.3_sig_dn_GL_eR_GO_BP_extr1, HCE_23726_sig_dn_GL_eR_GO_BP_extr1, HCE_7.1_sig_dn_GL_eR_GO_BP_extr1, HCE_7.3_sig_dn_GL_eR_GO_BP_extr1)
+
+
+#make a function to extract those GO terms
+run_GO_extract <- function(input) {
+out <- filter(input, input$Term %in% all_GO_dn_top_25_terms)
+  return(out)
+  }
+
+####################
+
+# pull the top 50 terms out of the all_GO_dn
+all_GO_dn_top_25_terms_df <- run_GO_extract(input = all_GO_dn) 
+
+all_GO_dn_top_25_terms_df <- transform(all_GO_dn_top_25_terms_df, Term = factor(Term, levels = all_GO_dn_top_25_terms))
+
+# plot 
+all_GO_bubble_plot_dn <- ggplot(all_GO_dn_top_25_terms_df, aes(x = Condition, y=factor(Term, levels = rev(levels(factor(Term)))), size = Combined.Score, color = sig_boo)) +
+  geom_point(alpha = 0.5) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_colour_manual(values = c("grey", "#0072B2")) +
+  labs(size = "Combined Score", x = "Condition", y = "GO Term", color = expression("Adj. P value ("<="0.05)")) 
+
+all_GO_bubble_plot_dn
+
+png('all_GO_bubble_plot_dn.png', width=11, height=6, units = "in", res=400)
+all_GO_bubble_plot_dn
+dev.off()
+
+
+```
+
+
+```{r}
+# make a plot combining them 
+
+all_GO_bubble_plot_up_dn_sig <- ggarrange(all_GO_bubble_plot_up, all_GO_bubble_plot_dn, ncol=2)
+
+png('all_GO_bubble_plot_up_dn_sig_wide.png', width=21.5, height=7, units = "in", res=350)
+all_GO_bubble_plot_up_dn_sig
+dev.off()
+
+all_GO_bubble_plot_up_dn_sig <- ggarrange(all_GO_bubble_plot_up, all_GO_bubble_plot_dn, ncol=1)
+
+png('all_GO_bubble_plot_up_dn_sig_tall.png', width=12, height=12, units = "in", res=350)
+all_GO_bubble_plot_up_dn_sig
+dev.off()
+
+
+```
+
+
+
+

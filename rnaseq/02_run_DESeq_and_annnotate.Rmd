@@ -1,0 +1,445 @@
+---
+title: |
+    | 190505_Fuso-Inv / SOW GSC-1352
+    | Differential gene expression analysis of Fuso-invaded Human cell lines
+author: "Scott Brown"
+date: '`r format(Sys.Date(), "%Y-%B-%d")`'
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+editor_options: 
+  chunk_output_type: console
+fontsize: 10pt
+geometry: margin=0.5in
+---
+
+-----------------------------------
+
+# Objective
+
+Perform a differential gene expression analysis for 2 human cell lines (HCAE: Human carotid artery endothelial, and HCE: Human colon epithelial) exposed to either _Fusobacterium nucleatum_ strain 7/1 (Inflammatory Bowel Disease-derived), 7/33C1 (CRC-derived), or ATCC 23726 (oral-derived), or a non-invaded control.
+
+HCAE and HCE samples were sequenced September 2019 (IX7709), using Ribodepletion 3.0 protocol, 151bp reads on HiSeq. Each sample has ~20 million reads.
+
+Gene and transcript quantification for human was performed using RSEM, on the hg38 reference and ensembl101 (Snakemake pipeline: `01_rnaseq_to_gene_quantification.snakmake`).
+
+This analysis will perform DESeq2 on this data to find differentially expression genes between Fuso +/- samples, as well as specific comparisons for specific fuso strains or host cell lines.
+
+
+```{r setup, include=FALSE}
+SCRIPT_DIR <- getwd()
+ROOT_DIR <- "/projects/sbrown_prj/190505_Fuso-Inv"
+
+knitr::opts_knit$set(root.dir = ROOT_DIR)
+knitr::opts_chunk$set(
+	fig.height = 10,
+	fig.width = 15,
+	dev = "pdf",
+	echo = TRUE,
+	out.width = "100%"
+)
+
+source("/projects/sbrown_prj/labscripts/loadCommonRpackages.R")
+
+if(! requireNamespace("BiocManager", quietly = TRUE)){
+  install.packages("BiocManager")
+}
+if(! "tximport" %in% installed.packages()){
+  BiocManager::install("tximport")
+}
+library("tximport")
+
+if(! "DESeq2" %in% installed.packages()){
+  BiocManager::install("DESeq2")
+}
+library("DESeq2")
+
+if(! "apeglm" %in% installed.packages()){
+  BiocManager::install("apeglm")
+}
+library("apeglm")
+
+if(! "vsn" %in% installed.packages()){
+  BiocManager::install("vsn")
+}
+library("vsn")
+
+if(! "biomaRt" %in% installed.packages()){
+BiocManager::install("biomaRt")
+}
+library("biomaRt")
+
+if(! "AnnotationDbi" %in% installed.packages()){
+BiocManager::install("AnnotationDbi")
+}
+library("AnnotationDbi")
+
+if(! "org.Hs.eg.db" %in% installed.packages()){
+  install.packages("org.Hs.eg.db")
+}
+library("org.Hs.eg.db")
+
+if(! "org.Mm.eg.db" %in% installed.packages()){
+  install.packages("org.Mm.eg.db")
+}
+library("org.Mm.eg.db")
+
+if(! "annotate" %in% installed.packages()){
+  install.packages("annotate")
+}
+library("annotate")
+
+if(! "readr" %in% installed.packages()){
+  install.packages("readr")
+}
+library(readr)
+
+```
+
+# Load Data
+
+DESeq2 requires/expects un-normalized count data, so we will read in the count data from RSEM.
+
+```{r get_files}
+
+## Get sample metadata
+samples <- read.table("data/raw/sample_summary_for_deg_200207.txt", header=T, sep="\t",
+                      stringsAsFactors = F)
+rownames(samples) <- samples$barcode
+
+## based on read counts, dropping quadruplicate samples where they exist
+drop_extra_samples <- c("IX7709_B66806", "IX7709_B66809", "IX7709_B66815",
+                        "IX7709_B66820", "IX7709_B66824", "IX7709_B66828")
+samples <- subset(samples, ! barcode %in% drop_extra_samples)
+
+samples$fuso <- gsub("-",".",samples$fuso)
+
+samples$cell_fuso <- paste(samples$cell_line, samples$fuso, sep=".")
+samples$cell_condition <- paste(samples$cell_line, samples$condition, sep=".")
+
+## get result files
+dir <- paste0(ROOT_DIR, "/data/processed/expression_GRCh38.101")
+
+files <- file.path(dir, samples$barcode, paste0(samples$barcode, ".genes.results"))
+
+names(files) <- lapply(files, function(x){
+  return(strsplit(x, "/")[[1]][8])
+})
+
+```
+
+
+Get the sets of samples for each comparison
+```{r sample_sets}
+
+barcodes <- samples$barcode
+
+```
+
+Load expression data for each set of samples
+```{r load_rsem_data}
+
+rsem <- tximport(files[barcodes], type = "rsem", txIn = FALSE, txOut = FALSE)
+
+## manually set lengths of genes to be at least 1 in all samples
+## this is to avoide the Error in DESeq2::DESeqDataSetFromTximport(txi.rsem, samples, ~condition) : 
+##  all(lengths > 0) is not TRUE
+## error in the ddsTxi <- DESeq2::DESeqDataSetFromTximport(...) step.
+rsem$length[rsem$length==0] <- 1
+
+```
+
+
+```{r expression_qc}
+## QC ##
+
+
+expression <- as.data.frame(rsem$abundance)
+expression$gene <- row.names(expression)
+expression <- melt(expression, id.vars="gene")
+
+expression <- merge(expression, samples, by.x="variable", by.y="barcode")
+
+ggplot(expression, aes(x=value, group=variable)) +
+  geom_density() +
+  facet_grid(fuso~cell_line) +
+  scale_x_log10() +
+  xlab("Gene Abundance (log scale)") +
+  ylab("Density") +
+  theme_bw()
+
+drop_qc_samples <- c()
+
+barcodes <- barcodes[!barcodes %in% drop_qc_samples]
+
+
+```
+
+
+Reload expression data for each set of samples after removing bad samples (if any)
+```{r reload_rsem_data}
+
+if(length(drop_qc_samples) > 0){
+  rsem <- tximport(files[barcodes], type = "rsem", txIn = FALSE, txOut = FALSE)
+
+  ## manually set lengths of genes to be at least 1 in all samples
+  ## this is to avoide the Error in DESeq2::DESeqDataSetFromTximport(txi.rsem, samples, ~condition) : 
+  ##  all(lengths > 0) is not TRUE
+  ## error in the ddsTxi <- DESeq2::DESeqDataSetFromTximport(...) step.
+  rsem$length[rsem$length==0] <- 1
+}
+
+```
+
+
+Look up gene names
+
+```{r ensembl_download_and_orthologs}
+
+# get list of available marts
+#biomaRt::listDatasets(mart = useMart("ENSEMBL_MART_ENSEMBL"))
+
+human_ensembl <- useEnsembl(biomart = "ensembl", dataset = "hsapiens_gene_ensembl", version = 101)
+
+human_ensembl_attributes <- listAttributes(human_ensembl)
+
+human_feature_list <- c('ensembl_gene_id','hgnc_symbol', 'external_gene_name', 'entrezgene_id', 'entrezgene_accession', 'chromosome_name', 'gene_biotype')
+human_homolog_list <- c('ensembl_gene_id', 'mmusculus_homolog_ensembl_gene', 'mmusculus_homolog_associated_gene_name', 'mmusculus_homolog_orthology_type', 'mmusculus_homolog_orthology_confidence')
+
+
+human_ensembl_symbols <- getBM(attributes=human_feature_list,
+                   filters = 'ensembl_gene_id', 
+                   values = row.names(rsem$abundance), 
+                   mart = human_ensembl)
+human_ensembl_homologs <- getBM(attributes=human_homolog_list,
+                   filters = 'ensembl_gene_id', 
+                   values = row.names(rsem$abundance), 
+                   mart = human_ensembl)
+
+
+## only retain the 1:1 orthologs
+human_ensembl_orthologs <- subset(human_ensembl_homologs, mmusculus_homolog_orthology_type == "ortholog_one2one")
+
+# ## these two sets are identical, just in opposite directions.
+# ensembl_ortho <- merge(human_ensembl_orthologs[,c("ensembl_gene_id", "mmusculus_homolog_ensembl_gene", "mmusculus_homolog_associated_gene_name"),],
+#                        mouse_ensembl_orthologs[,c("hsapiens_homolog_ensembl_gene", "hsapiens_homolog_associated_gene_name")],
+#                        by.x="ensembl_gene_id", by.y="hsapiens_homolog_ensembl_gene")
+# names(ensembl_ortho) <- c("human_gene_id", "mouse_gene_id", "mouse_gene_name", "human_gene_name")
+# ensembl_ortho$ortho_pair <- paste(ensembl_ortho$human_gene_name, ensembl_ortho$mouse_gene_name, sep="_")
+
+# ## drop ENSG00000206952, as it is duplicated in ensembl_ortho with ENSG00000281910.
+# ensembl_ortho <- subset(ensembl_ortho, human_gene_id != "ENSG00000206952")
+
+
+
+
+human_ensembl_symbols_dedup <- do.call(rbind, by(human_ensembl_symbols, human_ensembl_symbols$ensembl_gene_id, function(x){
+  x <- as.data.frame(x)
+  if(nrow(x) > 1){
+    # subset to where hgnc_symbol matched entrezgene_accession
+    y <- subset(x, external_gene_name == entrezgene_accession)
+    if(nrow(y) == 0){
+      ## none match external
+      #pick first one
+      return(x[1,])
+    }else if(nrow(y) > 1){
+      ## still too many
+      ## pick where hgnc matches external gene name
+      z <- subset(y, external_gene_name == hgnc_symbol)
+      if(nrow(z) != 1){
+        print("Cannot dedup:")
+        print(y)
+      }else{
+        return(z)
+      }
+    }else{
+      return(y)
+    }
+  }else{
+    return(x)
+  }
+}))
+
+
+
+## good, now have a single name for each ensembl id, and a set of 1:1 orthologs.
+
+
+## figure out the biotype category
+human_ensembl_symbols_dedup$biotype_category <- apply(human_ensembl_symbols_dedup, 1, function(x){
+  if(x[["gene_biotype"]] %in% c("IG_C_gene", "IG_D_gene", "IG_J_gene", "IG_V_gene")){
+    return("IG_gene")
+  }else if(x[["gene_biotype"]] %in% c("lncRNA")){
+    return("lncRNA")
+  }else if(x[["gene_biotype"]] %in% c("miRNA", "misc_RNA", "Mt_rRNA", "Mt_tRNA", "ribozyme", "rRNA", "scaRNA", "scRNA", "snoRNA", "snRNA", "sRNA", "vault_RNA")){
+    return("ncRNA")
+  }else if(x[["gene_biotype"]] %in% c("protein_coding")){
+    return("protein_coding")
+  }else if(x[["gene_biotype"]] %in% c("IG_C_pseudogene", "IG_J_pseudogene", "IG_pseudogene", "IG_V_pseudogene", "polymorphic_pseudogene", "processed_pseudogene", "pseudogene", "rRNA_pseudogene", "transcribed_processed_pseudogene", "transcribed_unitary_pseudogene", "transcribed_unprocessed_pseudogene", "translated_processed_pseudogene", "translated_unprocessed_pseudogene", "TR_J_pseudogene", "TR_V_pseudogene", "unitary_pseudogene", "unprocessed_pseudogene")){
+    return("pesudogene")
+  }else if(x[["gene_biotype"]] %in% c("TR_C_gene", "TR_D_gene", "TR_J_gene", "TR_V_gene")){
+    return("TR_gene")
+  }else if(x[["gene_biotype"]] %in% c("TEC")){
+    return("TEC")
+  }else{
+    return("NO_BIOTYPE")
+  }
+})
+
+
+## list of non 1:1 orthologs
+
+## only retain the homologs
+human_ensembl_multiorthologs <- subset(human_ensembl_homologs, mmusculus_homolog_orthology_type %in% c("ortholog_many2many", "ortholog_one2many"))
+
+
+```
+
+
+Convert to DESeq2 Data Sets.
+```{r convert_deseq_data}
+
+## construct DESeqDataSets
+
+## be able to test effect of fuso +/- within each cell line
+# ddsTxi_cell_condition <- DESeqDataSetFromTximport(rsem, 
+#                            subset(samples, barcode %in% barcodes), 
+#                            ~cell_condition)
+
+## be able to test effect of fuso strain within each cell line
+ddsTxi_cell_fuso <- DESeqDataSetFromTximport(rsem, 
+                           subset(samples, barcode %in% barcodes), 
+                           ~cell_fuso)
+
+
+## set reference level for condition
+# ddsTxi_cell_condition$cell_condition <- relevel(ddsTxi_cell_condition$cell_condition,
+#                                                 ref = "HCE.negative")
+
+ddsTxi_cell_fuso$cell_fuso <- relevel(ddsTxi_cell_fuso$cell_fuso, ref = "HCE.negative")
+
+```
+
+
+
+
+Run DESeq2.
+
+```{r run_deseq2}
+
+# dds_cell_condition <- DESeq(ddsTxi_cell_condition)
+dds_cell_fuso <- DESeq(ddsTxi_cell_fuso)
+
+```
+
+
+
+
+Shrink the effect size (LFC estimate) for visualization and ranking of genes.
+
+```{r shrink_lfc}
+
+res <- list()
+
+
+
+## loop through all fuso and cells
+for(x in c("HCE", "HCAE")){
+  for(y in c("7.1", "7.3", "23726")){
+    res[paste(x, y, sep="_")] <- lfcShrink(dds_cell_fuso, contrast = c("cell_fuso", paste(x, ".strain_", y, sep=""), paste(x, ".negative", sep="")))
+  }
+}
+
+res_names <- names(res)
+
+
+```
+
+
+Merge with entrez gene ids and get a single data point for each entrez id.
+```{r convert_and_reduce_to_entrez}
+
+## all genes
+res_named <- lapply(names(res), function(n){
+  m <- merge(as.data.frame(res[[n]]), human_ensembl_symbols_dedup, by.x="row.names", by.y="ensembl_gene_id", all.x=T)
+  m <- merge(m, ensembl_ortho, by.x="Row.names", by.y="human_gene_id", all.x=T)
+  m$hasHomology <- apply(m, 1, function(y){
+    return(y[["Row.names"]] %in% human_ensembl_multiorthologs$ensembl_gene_id)
+  })
+  return(m)
+})
+names(res_named) <- res_names
+
+```
+
+
+
+
+Order by FC
+
+```{r order_lfc}
+
+
+res_named <- lapply(names(res_named), function(x){
+  return(res_named[[x]][order(res_named[[x]]$log2FoldChange),])
+})
+names(res_named) <- res_names
+
+```
+
+
+Plot the gene FC and padj for each condition, with cutoffs.
+```{r summary_plots}
+
+volcanoPlots_array <- lapply(names(res_named), function(x){
+  to.plot <- as.data.frame(res_named[[x]])
+  to.label <- subset(to.plot, abs(log2FoldChange) > 2 & padj < 0.05)
+  to.label <- rbind(to.label[order(abs(to.label$log2FoldChange*-log10(to.label$padj)), decreasing = T),][1:15,],
+                    to.label[order(abs(to.label$log2FoldChange*-log10(to.label$padj)), decreasing = F),][1:10,])
+  
+  to.label$label <- to.label$external_gene_name
+  to.plot <- merge(to.plot, to.label[,c("Row.names", "label")], by = "Row.names", all.x=T)
+  to.plot$label[is.na(to.plot$label)] <- ""
+  
+  
+  return(ggplot(to.plot, aes(x=log2FoldChange, y=-log10(padj))) + 
+    geom_point(shape=1, color="#888888") + 
+    geom_point(data = subset(to.plot, padj < 0.05 & abs(log2FoldChange) > 2), color="black") + 
+    geom_hline(yintercept=-log10(0.05), linetype="dashed") +
+    geom_vline(xintercept=log2(4), linetype="dashed") +
+    geom_vline(xintercept=-log2(4), linetype="dashed") +
+    geom_text_repel(aes(label=label)) +
+    ggtitle(x) +
+    theme_bw())
+})
+
+names(volcanoPlots_array) <- res_names
+
+plot_grid(volcanoPlots_array, margin=c(0.4,0.4,0.4,0.4))
+
+
+```
+
+
+
+
+Write list of genes
+```{r write_genes, eval=FALSE, include=FALSE}
+
+base_dir <- "data/processed/DEseq/v5/"
+
+dir.create(base_dir, showWarnings = FALSE)
+
+for(n in names(res_named)){
+  towrite <- res_named[[n]]
+  
+  towrite <- towrite[order(towrite$log2FoldChange),]
+  message("Writing ", n)
+  write.table(towrite,
+              paste0(base_dir, n, ".withNames.deseq.tsv"),
+              sep="\t", quote=F, row.names = F)
+}
+
+```
+

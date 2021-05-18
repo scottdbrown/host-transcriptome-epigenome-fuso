@@ -1,0 +1,136 @@
+## Run RSEM on the sequence datasets
+
+## April 21, 2021
+## Scott Brown
+
+
+import os
+import time
+
+
+## directories
+ROOT = "/projects/sbrown_prj/190505_Fuso-Inv/"
+LOCAL_REFERENCE_DIR = "data/raw/ref/human/GRCh38_ens101/"
+SCRATCH = "/projects/sbrown_prj/sbrown_scratch/190505_Fuso-Inv/"
+
+GENE_ANNOTATIONS_NAME = "Homo_sapiens.GRCh38.101"
+GENE_ANNOTATIONS = "/projects/sbrown_prj/sbrown_scratch/ref/Homo_sapiens/GRCh38_ens101/gtf/{}.gtf".format(GENE_ANNOTATIONS_NAME)
+
+GENOME_NAME = "Homo_sapiens.GRCh38.dna.toplevel"
+GENOME = "/projects/sbrown_prj/sbrown_scratch/ref/Homo_sapiens/GRCh38_ens101/fasta/{}.fa".format(GENOME_NAME)
+
+## variable pulls
+LIBS = ["IX7709_B66801", "IX7709_B66802", "IX7709_B66803", "IX7709_B66804", "IX7709_B66805",
+        "IX7709_B66806", "IX7709_B66807", "IX7709_B66808", "IX7709_B66809", "IX7709_B66810",
+        "IX7709_B66811", "IX7709_B66812", "IX7709_B66813", "IX7709_B66814", "IX7709_B66815",
+        "IX7709_B66816", "IX7709_B66817", "IX7709_B66818", "IX7709_B66819", "IX7709_B66820",
+        "IX7709_B66821", "IX7709_B66822", "IX7709_B66823", "IX7709_B66824", "IX7709_B66825",
+        "IX7709_B66826", "IX7709_B66827", "IX7709_B66828", "IX7709_B66829", "IX7709_B66830"]
+
+## parse sample file to get archived crams for each LIB
+CRAMS = {}
+for line in open("/projects/sbrown_prj/190505_Fuso-Inv/data/raw/sample_summary_for_deg_200207_withArchivedFiles.txt", "r"):
+    line = line.rstrip().split("\t")
+    CRAMS[line[0]] = os.path.join("/projects/holtlab_archive", line[6])
+
+
+
+###############
+#### RULES ####
+###############
+
+rule all: 
+    input:
+        expand(os.path.join("data/processed/expression_GRCh38.101", "{combined_lib_id}/{combined_lib_id}.isoforms.results"), combined_lib_id = LIBS),
+
+## Create a symlink of the genome reference in local directory
+rule symlink_genome:
+    input:
+        GENOME
+    output:
+        os.path.join(ROOT, LOCAL_REFERENCE_DIR, os.path.basename(GENOME))
+    shell:
+        "ln -s {input} {output}"
+
+## Create a symlink of the gene annotation reference in local directory
+rule symlink_gtf:
+    input:
+        GENE_ANNOTATIONS
+    output:
+        os.path.join(ROOT, LOCAL_REFERENCE_DIR, os.path.basename(GENE_ANNOTATIONS))
+    shell:
+        "ln -s {input} {output}"
+
+## Genreate the STAR index of the genome and annotation file
+rule generate_index:
+    input:
+        ref_fasta = os.path.join(ROOT, LOCAL_REFERENCE_DIR, "{}.fa".format(GENOME_NAME)),
+        ref_gtf = os.path.join(ROOT, LOCAL_REFERENCE_DIR, "{}.gtf".format(GENE_ANNOTATIONS_NAME))
+    output:
+        os.path.join(ROOT, LOCAL_REFERENCE_DIR, "transcriptInfo.tab")
+    threads: 8
+    params:
+        star = "STAR",
+        mode = "genomeGenerate",
+        gendir = LOCAL_REFERENCE_DIR,
+    shell:
+        "{params.star} --runThreadN {threads} --runMode {params.mode} --genomeDir {params.gendir} --genomeFastaFiles {input.ref_fasta} --sjdbGTFfile {input.ref_gtf} --limitGenomeGenerateRAM 168632718037"
+
+## Run rsem-prepare-reference on the genome and annotations references.
+rule prepare_reference:
+    input:
+        genome = os.path.join(ROOT, LOCAL_REFERENCE_DIR, os.path.basename(GENOME)),
+        gtf = os.path.join(ROOT, LOCAL_REFERENCE_DIR, os.path.basename(GENE_ANNOTATIONS))
+    output:
+        os.path.join(ROOT, LOCAL_REFERENCE_DIR, "{}.grp".format(GENOME_NAME))
+    threads: 8
+    params:
+        rsem = "rsem-prepare-reference",
+        ref_name = os.path.join(LOCAL_REFERENCE_DIR, GENOME_NAME)
+    shell:
+        "{params.rsem} --gtf {input.gtf} -p {threads} {input.genome} {params.ref_name}"
+
+## Decompress the cram files back to bam
+rule cram_to_bam:
+    input:
+        cram = lambda w: CRAMS[w.combined_lib_id]
+    output:
+        bam = temp(os.path.join(SCRATCH, "data/interim", "{combined_lib_id}.bam")),
+    threads: 8
+    params:
+        ref = "/projects/holtlab_archive/ref/hg19_suite/hg19_suite.fa"
+    shell:
+        "samtools view -@ {threads} -T {params.ref} --input-fmt-option decode_md=0 -O bam -o {output.bam} {input.cram}"
+
+## Extract the paired fastq files from the bam
+rule bam_to_fastq:
+    input:
+        bam = rules.cram_to_bam.output.bam
+    output:
+        fwd = temp(os.path.join(SCRATCH, "data/interim", "{combined_lib_id}_1.fastq")),
+        rev = temp(os.path.join(SCRATCH, "data/interim", "{combined_lib_id}_2.fastq"))
+    threads: 8
+    priority: 99
+    params:
+        b2f = "bam2fastq",
+        outdir = os.path.join(SCRATCH, "data/interim")
+    shell:
+        "{params.b2f} -o {params.outdir}/{wildcards.combined_lib_id}#.fastq {input.bam}"
+
+## Run rsem-calculate-expression to get the gene quantification.
+rule calculate_expression:
+    input:
+        fwd = os.path.join(SCRATCH, "data/interim", "{combined_lib_id}_1.fastq"),
+        rev = os.path.join(SCRATCH, "data/interim", "{combined_lib_id}_2.fastq"),
+        ref = os.path.join(ROOT, LOCAL_REFERENCE_DIR, "{}.grp".format(GENOME_NAME)),
+        transcriptome = os.path.join(ROOT, LOCAL_REFERENCE_DIR, "transcriptInfo.tab")
+    output:
+        file = os.path.join("data/processed/expression_GRCh38.101", "{combined_lib_id}/{combined_lib_id}.isoforms.results")
+    params:
+        rsem = "rsem-calculate-expression",
+        ref_name = os.path.join(LOCAL_REFERENCE_DIR, GENOME_NAME),
+        temp_dir = lambda wildcards: os.path.join(SCRATCH, "{}".format(wildcards.combined_lib_id))
+    priority: 100
+    threads: 8
+    shell:
+        "{params.rsem} -p {threads} --no-bam-output --temporary-folder {params.temp_dir} --star --paired-end {input.fwd} {input.rev} {params.ref_name} data/processed/expression_GRCh38.101/{wildcards.combined_lib_id}/{wildcards.combined_lib_id}"

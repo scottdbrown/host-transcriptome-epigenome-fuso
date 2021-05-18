@@ -1,0 +1,308 @@
+## Run ChromHMM
+
+## April 21, 2021
+## Scott Brown
+
+import os
+import time
+import glob
+
+## directories
+ROOT = "/projects/sbrown_prj/190505_Fuso-Inv/"
+SCRATCH_ROOT = '/projects/sbrown_prj/sbrown_scratch/190505_Fuso-Inv/'
+CHROMHMM_DIR = "/projects/sbrown_prj/bin/ChromHMM/"
+
+ARCHIVE_DIR = "/projects/holtlab_archive/2020/"
+BAM_DIR = "data/raw/ChIP-seq/bam/"
+
+
+SAMPLE_MAPPING_FILE = os.path.join(ROOT, "data/raw/ChIP-seq/chipseq_bam_samplemap_withReplicates_withBams_210219.txt")
+
+EXPERIMENTAL_SAMPLE_MAPPING = {}
+CONTROL_SAMPLE_MAPPING = {}
+
+CRAMS = {}
+BAMS = []
+
+CELL_LINES = set()
+FUSO_STATUSES = set()
+HISTONE_MARKS = set()
+REPLICATES = set()
+
+## build sample mapping dictionaries for experimental and control samples from the sample mapping file.
+HEADER = True
+for line in open(SAMPLE_MAPPING_FILE, "r"):
+    if HEADER:
+        HEADER = False
+    else:
+        ## process the line
+        cell_line, fuso_status, histone_mark, replicate, library, filename = line.rstrip().split("\t")
+
+        CELL_LINES.add(cell_line)
+        FUSO_STATUSES.add(fuso_status)
+        REPLICATES.add(replicate)
+
+        BAMS.append(filename)
+
+        ## using the library and mark, get the cram file from the archive.
+        CRAMS[filename] = glob.glob(os.path.join(ARCHIVE_DIR, "datHL_*.*_{library}_{mark}_hg19a.bam.hg19_suite.cram".format(library=library, mark=histone_mark)))[0]
+
+        if histone_mark != "InputDNAControl":
+            HISTONE_MARKS.add(histone_mark)
+
+            ## initialize dictionary
+            if cell_line not in EXPERIMENTAL_SAMPLE_MAPPING:
+                EXPERIMENTAL_SAMPLE_MAPPING[cell_line] = {}
+            if fuso_status not in EXPERIMENTAL_SAMPLE_MAPPING[cell_line]:
+                EXPERIMENTAL_SAMPLE_MAPPING[cell_line][fuso_status] = {}
+            if replicate not in EXPERIMENTAL_SAMPLE_MAPPING[cell_line][fuso_status]:
+                EXPERIMENTAL_SAMPLE_MAPPING[cell_line][fuso_status][replicate] = {}
+            if histone_mark not in EXPERIMENTAL_SAMPLE_MAPPING[cell_line][fuso_status][replicate]:
+                EXPERIMENTAL_SAMPLE_MAPPING[cell_line][fuso_status][replicate][histone_mark] = ""
+
+            ## add file path
+            EXPERIMENTAL_SAMPLE_MAPPING[cell_line][fuso_status][replicate][histone_mark] = filename
+
+
+        else:   ## histone_mark == "InputDNAControl"
+            ## initialize dictionary
+            if cell_line not in CONTROL_SAMPLE_MAPPING:
+                CONTROL_SAMPLE_MAPPING[cell_line] = {}
+            if fuso_status not in CONTROL_SAMPLE_MAPPING[cell_line]:
+                CONTROL_SAMPLE_MAPPING[cell_line][fuso_status] = {}
+            if replicate not in CONTROL_SAMPLE_MAPPING[cell_line][fuso_status]:
+                CONTROL_SAMPLE_MAPPING[cell_line][fuso_status][replicate] = ""
+
+            ## add file path
+            CONTROL_SAMPLE_MAPPING[cell_line][fuso_status][replicate] = filename
+
+CELL_LINES = list(CELL_LINES)
+FUSO_STATUSES = list(FUSO_STATUSES)
+HISTONE_MARKS = list(HISTONE_MARKS)
+REPLICATES = list(REPLICATES)
+
+## make a ChromHMM model with the number of states for each of these values
+STATES_TESTED = [x for x in range(2,25)]
+
+
+COORDS_FILES = [x.split('.')[0] for x in os.listdir(os.path.join(CHROMHMM_DIR, "COORDS/hg19"))]
+ANCHOR_FILES = [x.split('.')[0] for x in os.listdir(os.path.join(CHROMHMM_DIR, "ANCHORFILES/hg19"))]
+
+###############
+#### RULES ####
+###############
+
+rule all: 
+    input:
+        expand(os.path.join(CHROMHMM_DIR, "COORDS/hg19a/{fn}.hg19a.bed.gz"), fn = COORDS_FILES),
+        expand(os.path.join(CHROMHMM_DIR, "ANCHORFILES/hg19a/{fn}.hg19a.txt.gz"), fn = ANCHOR_FILES),
+        expand(os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/learned_{numstates}-states_done"),  numstates = STATES_TESTED),
+        os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/comparison/comp_to_roadmap.txt"),
+        os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed_segments"),
+        os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/browser_files_made"),
+        os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/browser_files_chr"),
+        expand(os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed/{cell}_{fuso}_{rep}_10_dense_ucsc_recoloured.bed"), cell=CELL_LINES, fuso=FUSO_STATUSES, rep=REPLICATES)
+        expand(os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed/{cell}_{fuso}_{rep}_10_dense_ucsc_200bpregions.tsv"), cell=CELL_LINES, fuso=FUSO_STATUSES, rep=REPLICATES),
+        expand(os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/binarized_merged/{cell}_{fuso}_{rep}_binary.txt"), cell=CELL_LINES, fuso=FUSO_STATUSES, rep=REPLICATES),
+        expand(os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/consistent/{cell}_{fuso}_concordant_10_dense_ucsc.bed"), cell=CELL_LINES, fuso=FUSO_STATUSES),
+        
+
+
+## Decompress cram file to bam
+rule cram_to_bam:
+    input:
+        cram = lambda w: CRAMS[w.bf]
+    output:
+        bam = os.path.join(SCRATCH_ROOT, BAM_DIR, "{bf}"),
+    priority: 1
+    threads: 8
+    params:
+        ref = "/projects/holtlab_archive/ref/hg19_suite/hg19_suite.fa"
+    shell:
+        "samtools view -@ {threads} -T {params.ref} --input-fmt-option decode_md=0 -O bam -o {output.bam} {input.cram}"
+
+## Create ChromHMM design file from sample mappings
+rule write_design_file:
+    output:
+        design_file = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/design/", "designfile.tsv")
+    priority: 2
+    run:
+        to_write = ""
+        for cl in CELL_LINES:
+            ## for each fuso status (treated as different celllines)
+            for fs in FUSO_STATUSES:
+                ## for each histone mark
+                for hm in HISTONE_MARKS:
+                    ## for each replicate
+                    for rp in REPLICATES:
+                        ## get the mark file
+                        to_write += "{cell}\t{mark}\t{file}\t{control}\n".format(cell = "{}_{}_{}".format(cl, fs, rp), mark = hm, file = EXPERIMENTAL_SAMPLE_MAPPING[cl][fs][rp][hm], control = CONTROL_SAMPLE_MAPPING[cl][fs][rp])
+
+        out = open(output.design_file, "w")
+        out.write(to_write)
+        out.close()
+
+## Get chromasome lengths file
+rule make_chrlengthfile:
+    input:
+        fai_file = "/projects/alignment_references/Homo_sapiens/hg19a/genome/bwa_64/hg19a.fa.fai"
+    output:
+        chrlengthfile = os.path.join(ROOT, "data/raw/ref/genome", "hg19a_lengths.txt")
+    shell:
+        "cut -f1-2 {input.fai_file} > {output.chrlengthfile}"
+
+## Run BinarizeBam on the input bams
+rule binarize_data:
+    input:
+        bams = expand(os.path.join(SCRATCH_ROOT, BAM_DIR, "{bf}"), bf=BAMS), ## not used directly, but to set up the dependencies
+        cellmarkfiletable = rules.write_design_file.output.design_file,
+        chrlengthfile = os.path.join(ROOT, "data/raw/ref/genome", "hg19a_lengths.txt"),
+    output:
+        outputdir = directory(os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/binarized/"))
+    params:
+        chromhmm = os.path.join(CHROMHMM_DIR, "ChromHMM.jar"),
+        inputdir = os.path.join(SCRATCH_ROOT, BAM_DIR),
+    shell:
+        "java -mx16000M -jar {params.chromhmm} BinarizeBam {input.chrlengthfile} {params.inputdir} {input.cellmarkfiletable} {output.outputdir}"
+
+## Remove GL* and MT chromosomes
+rule remove_nonstandard_binarized_data:
+    ## This deletes non-standard chromosomes and mitochrondrial chromosome, and renames the rest.
+    input:
+        direc = rules.binarize_data.output.outputdir
+    output:
+        outflag = touch(os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/binarized_standardized"))
+    shell:
+        """rm {input.direc}*_GL*_binary.txt;
+        rm {input.direc}*_MT_binary.txt;"""
+
+## Remove "chr" prefix from ChromHMM coords
+rule convert_coords_annotations_to_hg19a:
+    ## Removes non-standard, mitochondrial, and cleaves 'chr' prefix.
+    input:
+        reffile = os.path.join(CHROMHMM_DIR, "COORDS/hg19", "{filename}.hg19.bed.gz")
+    output:
+        fixedfile = os.path.join(CHROMHMM_DIR, "COORDS/hg19a", "{filename}.hg19a.bed.gz")
+    priority: 1
+    shell:
+        "zcat {input.reffile} | grep -we 'chr[1-9XY]*' | sed 's/^chr//g' | gzip > {output.fixedfile}"
+
+## Remove "chr" prefix from ChromHMM anchor annotations
+rule convert_anchor_annotations_to_hg19a:
+    ## Removes non-standard, mitochondrial, and cleaves 'chr' prefix.
+    input:
+        reffile = os.path.join(CHROMHMM_DIR, "ANCHORFILES/hg19", "{filename}.hg19.txt.gz")
+    output:
+        fixedfile = os.path.join(CHROMHMM_DIR, "ANCHORFILES/hg19a", "{filename}.hg19a.txt.gz")
+    priority: 1
+    shell:
+        "zcat {input.reffile} | grep -we 'chr[1-9XY]*' | sed 's/^chr//g' |  gzip > {output.fixedfile}"
+
+## learn ChromHMM model for each selected number of states
+rule learn_model_varystates:
+    input:
+        inputdir = rules.binarize_data.output.outputdir,
+        flag = rules.remove_nonstandard_binarized_data.output.outflag
+    output:
+        flag = touch(os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/learned_{numstates}-states_done")),
+        models = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/learned/model_{numstates}.txt")
+    params:
+        assembly = "hg19a",
+        chromhmm = os.path.join(CHROMHMM_DIR, "ChromHMM.jar"),
+        outputdir = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/learned")
+    shell:
+        "java -mx4000M -jar {params.chromhmm} LearnModel {input.inputdir} {params.outputdir} {wildcards.numstates} {params.assembly}"
+
+## generate model comparisons for each learned model to the published REC 18 state model
+rule compare_models:
+    input:
+        models = expand(os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/learned_{numstates}-states_done"), numstates = STATES_TESTED),
+        roadmap_states = "/projects/sbrown_prj/190505_Fuso-Inv/data/raw/ChIP-seq/ChromHMM/18state_model_REC/emissions_18_core_K27ac.txt"
+    output:
+        comp = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/comparison/comp_to_roadmap.txt")
+    params:
+        name = "comp_to_roadmap",
+        working_dir = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/comparison/"),
+        learned_dir = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/learned"),
+        chromhmm = os.path.join(CHROMHMM_DIR, "ChromHMM.jar"),
+    shell:
+        "cd {params.working_dir}; java -mx4000M -jar {params.chromhmm} CompareModels {input.roadmap_states} {params.learned_dir} {params.name}"
+
+
+## MANUAL INTERVENTION WAS PERFORMED BETWEEN THESE RULES
+## Models were compared, and the 10-state model was selected as the best
+## States in the 10 state model were given names/annotations
+## Following rules move forward processing this 10-state model.
+
+## Rename the states in the 10 state model.
+rule rename_states:
+    input:
+        selected_model = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/learned/model_10.txt")
+    output:
+        renamed_model = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed/model_10.txt"),
+    params:
+        chromhmm = os.path.join(CHROMHMM_DIR, "ChromHMM.jar"),
+        state_mapping = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/10state_mapping.tsv"),
+        renamed_dir = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed/")
+    shell:
+        "java -mx4000M -jar {params.chromhmm} Reorder -m {params.state_mapping} {input.selected_model} {params.renamed_dir}"
+
+## Remake segmentation using the renamed model
+rule make_segments:
+    input:
+        model = rules.rename_states.output.renamed_model,
+        binary_dir = rules.binarize_data.output.outputdir
+    output:
+        renamed_segments = touch(os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed_segments"))
+    params:
+        chromhmm = os.path.join(CHROMHMM_DIR, "ChromHMM.jar"),
+        renamed_dir = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed/")
+    shell:
+        "java -mx4000M -jar {params.chromhmm} MakeSegmentation {input.model} {input.binary_dir} {params.renamed_dir}"
+
+## Make UCSC genome browser files from the renamed segmentation
+rule rename_browser_files:
+    input:
+        rules.make_segments.output.renamed_segments
+    output:
+        touch(os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/browser_files_made"))
+    params:
+        working_dir = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed/"),
+        chromhmm = os.path.join(CHROMHMM_DIR, "ChromHMM.jar"),
+        state_mapping = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/10state_mapping.tsv"),
+    shell:
+        'cd {params.working_dir}; ls *.bed | awk -F "_" \'{{print $1"_"$2"_"$3}}\' | xargs -I [] sh -c "java -mx4000M -jar {params.chromhmm} MakeBrowserFiles -m {params.state_mapping} {params.working_dir}/[]_10_segments.bed [] []_10"'
+
+## Modify genome browser file colours
+rule change_browser_file_colours:
+    input:
+        flag = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/browser_files_chr"),
+        bed = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed/{cell}_{fuso}_{rep}_10_dense_ucsc.bed")
+    output:
+        bed = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed/{cell}_{fuso}_{rep}_10_dense_ucsc_recoloured.bed")
+    shell:
+        """cat {input.bed} | sed 's/0,0,255/0,109,44/g' | sed 's/0,153,204/65,174,118/g' | sed 's/51,255,153/153,216,201/g' | sed 's/102,51,153/140,107,177/g' | sed 's/102,153,51/197,27,125/g' | sed 's/0,102,0/241,182,218/g' | sed 's/204,0,51/179,0,0/g' | sed 's/204,204,102/189,189,189/g' | sed 's/255,255,0/33,113,181/g' | sed 's/204,153,255/107,174,214/g' > {output.bed}"""
+
+## Merge the binary histone data to one file for analysis
+rule merge_binarized:
+    input:
+        binary_dir = rules.binarize_data.output.outputdir
+    output:
+        os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/binarized_merged/{cell}_{fuso}_{rep}_binary.txt")
+    shell:
+        "awk 'FNR<=2 && NR!=2{{next;}}{{print}}' {input.binary_dir}/{wildcards.cell}_{wildcards.fuso}_{wildcards.rep}_*.txt >> {output}"
+
+## find regions which have consistent states called across the 3 replicates.
+## outputs concordant (all 3 match) and majority (at least 2/3 match)
+rule find_consistent_states_across_replicates:
+    input:
+        rep1 = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed/{cell}_{fuso}_1_10_dense_ucsc.bed"),
+        rep2 = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed/{cell}_{fuso}_2_10_dense_ucsc.bed"),
+        rep3 = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/renamed/{cell}_{fuso}_3_10_dense_ucsc.bed")
+    output:
+        concordant = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/consistent/{cell}_{fuso}_concordant_10_dense_ucsc.bed"),
+        majority = os.path.join(ROOT, "data/processed/chip-seq/ChromHMM/v4_hce-hcae/consistent/{cell}_{fuso}_majority_10_dense_ucsc.bed"),
+    params:
+        script = "01a_find_consistent_chromhmm_states.py"
+    shell:
+        "python {params.script} --rep1 {input.rep1} --rep2 {input.rep2} --rep3 {input.rep3} --concordant_outfile {output.concordant} --majority_outfile {output.majority}"
