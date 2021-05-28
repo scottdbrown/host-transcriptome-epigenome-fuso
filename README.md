@@ -2,7 +2,7 @@
 
 May 28, 2021
 
-Citation: [BioRxiv pre-print](https://doi.org/10.1101/2021.05.28.445195)
+Citation: [BioRxiv pre-print DOI: 10.1101/2021.05.28.445195](https://www.biorxiv.org/content/10.1101/2021.05.28.445195v1)
 
 Authors: Cody A Despins, Scott D Brown, Avery V Robinson, Andrew J Mungall, Emma Allen-Vercoe, Robert A Holt
 
