@@ -1,8 +1,8 @@
 # Modulation of the host cell transcriptome and epigenome by *Fusobacterium nucleatum*
 
-May 28, 2021
+October 26, 2021
 
-Citation: [BioRxiv pre-print DOI: 10.1101/2021.05.28.445195](https://www.biorxiv.org/content/10.1101/2021.05.28.445195v1)
+Citation: [mBio DOI: https://journals.asm.org/doi/10.1128/mBio.02062-21](https://journals.asm.org/doi/10.1128/mBio.02062-21)
 
 Authors: Cody A Despins, Scott D Brown, Avery V Robinson, Andrew J Mungall, Emma Allen-Vercoe, Robert A Holt
 
